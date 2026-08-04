@@ -25,6 +25,15 @@ $locations = $pdo->query("SELECT location_id, location_name FROM locations ORDER
 $filterCat    = $_GET['cat']    ?? 'all';
 $filterStatus = $_GET['status'] ?? 'all';
 $filterOwn    = $_GET['own']    ?? 'all';
+$filterUser   = $_GET['user_id'] ?? 'all';
+
+// Fetch users who hold assets for the filter dropdown
+$filterUsers = $pdo->query("
+    SELECT DISTINCT u.user_id, u.full_name, u.emp_id 
+    FROM users u 
+    JOIN assets a ON u.user_id = a.user_id 
+    ORDER BY u.full_name ASC
+")->fetchAll(PDO::FETCH_ASSOC);
 
 // Build query
 $where = [];
@@ -32,6 +41,14 @@ $params = [];
 if ($filterCat    !== 'all') { $where[] = "a.category = :cat";           $params['cat']    = $filterCat; }
 if ($filterStatus !== 'all') { $where[] = "a.status = :status";          $params['status'] = $filterStatus; }
 if ($filterOwn    !== 'all') { $where[] = "a.ownership_type = :own";     $params['own']    = $filterOwn; }
+if ($filterUser   !== 'all') {
+    if ($filterUser === 'unassigned') {
+        $where[] = "a.user_id IS NULL";
+    } else {
+        $where[] = "a.user_id = :user_id";
+        $params['user_id'] = $filterUser;
+    }
+}
 
 $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
@@ -113,7 +130,7 @@ require_once 'includes/layout.php';
                     $active = ($filterCat === $cat);
                     $label  = $cat === 'all' ? htmlspecialchars(__('All')) : htmlspecialchars($cat);
                 ?>
-                <a href="?cat=<?= urlencode($cat) ?>&status=<?= urlencode($filterStatus) ?>&own=<?= urlencode($filterOwn) ?>"
+                <a href="?cat=<?= urlencode($cat) ?>&status=<?= urlencode($filterStatus) ?>&own=<?= urlencode($filterOwn) ?>&user_id=<?= urlencode($filterUser) ?>"
                    style="display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:6px;font-size:.8rem;font-weight:600;background:<?= $active ? 'var(--color-accent-lite)' : '#f8fafc' ?>;color:<?= $active ? 'var(--color-accent-dark)' : 'var(--color-text-sub)' ?>;border:1px solid <?= $active ? 'var(--color-accent)' : 'var(--color-border)' ?>;text-decoration:none;transition:.15s;">
                     <?= $label ?>
                     <span style="background:<?= $active ? 'var(--color-accent)' : '#e2e8f0' ?>;color:<?= $active ? '#fff' : 'var(--color-text-muted)' ?>;padding:2px 6px;border-radius:4px;font-size:.7rem; line-height:1;"><?= (int)$cnt ?></span>
@@ -121,10 +138,23 @@ require_once 'includes/layout.php';
                 <?php endforeach; ?>
             </div>
 
-            <!-- Status + Ownership Dropdowns -->
-            <form method="GET" style="display:flex; gap:10px; align-items:center; margin:0;">
+            <!-- Filters Form -->
+            <form method="GET" style="display:flex; gap:10px; align-items:center; margin:0; flex-wrap:wrap;">
                 <input type="hidden" name="cat" value="<?= htmlspecialchars($filterCat) ?>">
                 
+                <div style="position:relative;">
+                    <i class="bi bi-person" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--color-text-muted);font-size:12px;"></i>
+                    <select name="user_id" class="form-control form-select" style="width:190px;padding:6px 24px 6px 30px;font-size:.8rem; border-radius:6px;" onchange="this.form.submit()">
+                        <option value="all" <?= $filterUser==='all'?'selected':'' ?>><?= htmlspecialchars(__('All Holders / Stock')) ?></option>
+                        <option value="unassigned" <?= $filterUser==='unassigned'?'selected':'' ?>><?= htmlspecialchars(__('Unassigned (IT Stock)')) ?></option>
+                        <?php foreach ($filterUsers as $fu): ?>
+                            <option value="<?= (int)$fu['user_id'] ?>" <?= (int)$filterUser===(int)$fu['user_id']?'selected':'' ?>>
+                                <?= htmlspecialchars($fu['full_name']) ?> <?= $fu['emp_id'] ? '('.htmlspecialchars($fu['emp_id']).')' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
                 <div style="position:relative;">
                     <i class="bi bi-funnel" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--color-text-muted);font-size:12px;"></i>
                     <select name="status" class="form-control form-select" style="width:130px;padding:6px 24px 6px 30px;font-size:.8rem; border-radius:6px;" onchange="this.form.submit()">
@@ -145,7 +175,7 @@ require_once 'includes/layout.php';
                     </select>
                 </div>
 
-                <?php if ($filterCat!=='all'||$filterStatus!=='all'||$filterOwn!=='all'): ?>
+                <?php if ($filterCat!=='all'||$filterStatus!=='all'||$filterOwn!=='all'||$filterUser!=='all'): ?>
                     <a href="assets.php" class="btn btn-ghost btn-sm" style="padding:6px 10px;color:var(--color-danger); border-radius:6px;" title="Clear Filters"><i class="bi bi-x-circle"></i></a>
                 <?php endif; ?>
             </form>
