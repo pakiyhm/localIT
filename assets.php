@@ -1029,11 +1029,17 @@ function updateBulkToolbar() {
 if (selectAll) {
     selectAll.addEventListener('change', function() {
         checkboxes.forEach(cb => {
-            cb.checked = this.checked;
             const row = cb.closest('tr');
-            if (row) {
+            if (row && row.style.display !== 'none') {
+                cb.checked = this.checked;
                 row.style.background = this.checked ? '#eff6ff' : '';
                 row.style.outline    = this.checked ? '2px solid #93c5fd' : '';
+            } else {
+                cb.checked = false;
+                if (row) {
+                    row.style.background = '';
+                    row.style.outline = '';
+                }
             }
         });
         updateBulkToolbar();
@@ -1270,6 +1276,339 @@ document.getElementById('bulkModal')?.addEventListener('click', function(e) {
         </form>
     </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    initExcelFilter();
+});
+
+function initExcelFilter() {
+    const table = document.querySelector(".tbl-wrap table");
+    if (!table) return;
+
+    const headers = table.querySelectorAll("thead th");
+    const tbody = table.querySelector("tbody");
+    const rows = tbody.querySelectorAll("tr");
+    
+    // We will save active filters here: { colIndex: Set of checked values }
+    const activeFilters = {};
+
+    headers.forEach((th, colIndex) => {
+        // Skip first column (checkbox) and last column (controls)
+        if (colIndex === 0 || colIndex === headers.length - 1) return;
+
+        // Ensure relative positioning
+        th.style.position = "relative";
+
+        // Create the Excel funnel button
+        const filterBtn = document.createElement("span");
+        filterBtn.className = "excel-filter-btn";
+        filterBtn.innerHTML = ' <i class="bi bi-funnel-fill" style="cursor:pointer; opacity:0.3; margin-left:5px; font-size:11px; vertical-align: middle;"></i>';
+        filterBtn.style.float = "right";
+        th.appendChild(filterBtn);
+
+        // Click handler to open the Excel dropdown card
+        filterBtn.querySelector("i").addEventListener("click", function(e) {
+            e.stopPropagation();
+            toggleFilterDropdown(colIndex, th, table, tbody, rows, activeFilters);
+        });
+    });
+
+    // Close dropdowns on clicking outside
+    document.addEventListener("click", function(e) {
+        const activeDropdown = document.querySelector(".excel-filter-dropdown");
+        if (activeDropdown && !activeDropdown.contains(e.target)) {
+            activeDropdown.remove();
+        }
+    });
+}
+
+function toggleFilterDropdown(colIndex, th, table, tbody, rows, activeFilters) {
+    // Remove existing dropdowns
+    const existing = document.querySelector(".excel-filter-dropdown");
+    if (existing) {
+        const isSame = existing.dataset.colIndex == colIndex;
+        existing.remove();
+        if (isSame) return;
+    }
+
+    // Determine unique values in this column currently
+    const uniqueValues = new Set();
+    rows.forEach(row => {
+        // Skip empty state rows
+        if (row.querySelector(".empty-state")) return;
+        const cell = row.cells[colIndex];
+        if (cell) {
+            let val = cell.innerText.trim();
+            // Remove the bi-shop or bi-clock icons or action badges text
+            val = val.replace(/\s+/g, ' ');
+            if (val === '') val = "(Blank)";
+            uniqueValues.add(val);
+        }
+    });
+
+    const sortedValues = Array.from(uniqueValues).sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
+
+    // Create dropdown element
+    const dropdown = document.createElement("div");
+    dropdown.className = "excel-filter-dropdown";
+    dropdown.dataset.colIndex = colIndex;
+    dropdown.style.position = "absolute";
+    dropdown.style.top = "100%";
+    dropdown.style.right = "0";
+    dropdown.style.background = "#ffffff";
+    dropdown.style.border = "1px solid #cbd5e1";
+    dropdown.style.borderRadius = "8px";
+    dropdown.style.boxShadow = "0 12px 30px rgba(0,0,0,0.15)";
+    dropdown.style.zIndex = "1000";
+    dropdown.style.padding = "12px";
+    dropdown.style.minWidth = "220px";
+    dropdown.style.maxWidth = "320px";
+    dropdown.style.color = "#0f172a";
+    dropdown.style.fontWeight = "normal";
+    dropdown.style.fontSize = "13px";
+    dropdown.style.marginTop = "4px";
+
+    // Stop click events inside the dropdown from propagating (which would close it)
+    dropdown.addEventListener("click", e => e.stopPropagation());
+
+    // Search bar input
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.placeholder = "Search...";
+    searchInput.className = "form-control";
+    searchInput.style.fontSize = "12px";
+    searchInput.style.padding = "6px 10px";
+    searchInput.style.marginBottom = "8px";
+    searchInput.style.width = "100%";
+    dropdown.appendChild(searchInput);
+
+    // Scrollable container for checkboxes
+    const listContainer = document.createElement("div");
+    listContainer.style.maxHeight = "180px";
+    listContainer.style.overflowY = "auto";
+    listContainer.style.marginBottom = "10px";
+    listContainer.style.border = "1px solid #e2e8f0";
+    listContainer.style.borderRadius = "6px";
+    listContainer.style.padding = "6px";
+
+    // (Select All) choice
+    const selectAllDiv = document.createElement("div");
+    selectAllDiv.style.display = "flex";
+    selectAllDiv.style.alignItems = "center";
+    selectAllDiv.style.gap = "6px";
+    selectAllDiv.style.fontSize = "12px";
+    selectAllDiv.style.marginBottom = "6px";
+    selectAllDiv.style.fontWeight = "bold";
+    selectAllDiv.style.borderBottom = "1px solid #f1f5f9";
+    selectAllDiv.style.paddingBottom = "4px";
+    
+    const selectAllChk = document.createElement("input");
+    selectAllChk.type = "checkbox";
+    selectAllChk.checked = !activeFilters[colIndex];
+    selectAllChk.style.cursor = "pointer";
+    
+    const selectAllLbl = document.createElement("span");
+    selectAllLbl.innerText = "(Select All)";
+    
+    selectAllDiv.appendChild(selectAllChk);
+    selectAllDiv.appendChild(selectAllLbl);
+    listContainer.appendChild(selectAllDiv);
+
+    const checkboxes = [];
+    const activeColFilters = activeFilters[colIndex];
+
+    sortedValues.forEach(val => {
+        const isChecked = activeColFilters ? activeColFilters.has(val) : true;
+        const optDiv = document.createElement("div");
+        optDiv.className = "excel-filter-option-item";
+        optDiv.style.display = "flex";
+        optDiv.style.alignItems = "center";
+        optDiv.style.gap = "6px";
+        optDiv.style.fontSize = "12px";
+        optDiv.style.padding = "4px 6px";
+        optDiv.style.borderRadius = "4px";
+        optDiv.style.cursor = "pointer";
+        
+        optDiv.addEventListener("click", function(e) {
+            if (e.target !== chk) {
+                chk.checked = !chk.checked;
+                chk.dispatchEvent(new Event("change"));
+            }
+        });
+
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.value = val;
+        chk.checked = isChecked;
+        chk.style.cursor = "pointer";
+        
+        chk.addEventListener("change", function() {
+            // If any checkbox is unchecked, selectAll becomes unchecked
+            if (!this.checked) {
+                selectAllChk.checked = false;
+            } else {
+                const allChecked = checkboxes.every(c => c.parentElement.style.display === "none" || c.checked);
+                selectAllChk.checked = allChecked;
+            }
+        });
+
+        const lbl = document.createElement("span");
+        lbl.innerText = val;
+        lbl.style.whiteSpace = "nowrap";
+        lbl.style.overflow = "hidden";
+        lbl.style.textOverflow = "ellipsis";
+
+        optDiv.appendChild(chk);
+        optDiv.appendChild(lbl);
+        listContainer.appendChild(optDiv);
+        checkboxes.push(chk);
+    });
+
+    dropdown.appendChild(listContainer);
+
+    // Toggle Select All checkbox action
+    selectAllChk.addEventListener("change", function() {
+        checkboxes.forEach(c => {
+            if (c.parentElement.style.display !== "none") {
+                c.checked = selectAllChk.checked;
+            }
+        });
+    });
+
+    // Realtime search text filter inside dropdown list
+    searchInput.addEventListener("input", function() {
+        const query = searchInput.value.toLowerCase().trim();
+        checkboxes.forEach(c => {
+            const text = c.value.toLowerCase();
+            if (text.includes(query)) {
+                c.parentElement.style.display = "flex";
+            } else {
+                c.parentElement.style.display = "none";
+            }
+        });
+    });
+
+    // Footer buttons (OK / Clear)
+    const footerDiv = document.createElement("div");
+    footerDiv.style.display = "flex";
+    footerDiv.style.justifyContent = "flex-end";
+    footerDiv.style.gap = "8px";
+
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.innerText = "Clear Filter";
+    clearBtn.className = "btn btn-ghost btn-sm";
+    clearBtn.style.padding = "4px 8px";
+    clearBtn.style.fontSize = "11px";
+    clearBtn.style.color = "#dc2626";
+    clearBtn.addEventListener("click", function() {
+        delete activeFilters[colIndex];
+        th.querySelector("i").style.opacity = "0.3";
+        th.querySelector("i").style.color = "";
+        applyFilters(table, tbody, rows, activeFilters);
+        dropdown.remove();
+    });
+
+    const okBtn = document.createElement("button");
+    okBtn.type = "button";
+    okBtn.innerText = "Apply";
+    okBtn.className = "btn btn-primary btn-sm";
+    okBtn.style.padding = "4px 14px";
+    okBtn.style.fontSize = "11px";
+    okBtn.addEventListener("click", function() {
+        const checkedBoxes = checkboxes.filter(c => c.checked);
+        
+        // If all items are checked, it means NO filter on this column
+        if (checkedBoxes.length === checkboxes.length) {
+            delete activeFilters[colIndex];
+            th.querySelector("i").style.opacity = "0.3";
+            th.querySelector("i").style.color = "";
+        } else {
+            const allowedSet = new Set(checkedBoxes.map(c => c.value));
+            activeFilters[colIndex] = allowedSet;
+            th.querySelector("i").style.opacity = "1";
+            th.querySelector("i").style.color = "#2563eb";
+        }
+
+        applyFilters(table, tbody, rows, activeFilters);
+        dropdown.remove();
+    });
+
+    footerDiv.appendChild(clearBtn);
+    footerDiv.appendChild(okBtn);
+    dropdown.appendChild(footerDiv);
+
+    th.appendChild(dropdown);
+}
+
+function applyFilters(table, tbody, rows, activeFilters) {
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        // Skip empty state rows
+        if (row.querySelector(".empty-state")) return;
+        
+        let isMatch = true;
+
+        for (const [colIndex, allowedSet] of Object.entries(activeFilters)) {
+            const cell = row.cells[colIndex];
+            if (cell) {
+                let val = cell.innerText.trim().replace(/\s+/g, ' ');
+                if (val === '') val = "(Blank)";
+                if (!allowedSet.has(val)) {
+                    isMatch = false;
+                    break;
+                }
+            }
+        }
+
+        if (isMatch) {
+            row.style.display = "";
+            visibleCount++;
+        } else {
+            row.style.display = "none";
+            // Make sure unchecked when hidden
+            const cb = row.querySelector(".row-checkbox");
+            if (cb) {
+                cb.checked = false;
+                row.style.background = '';
+                row.style.outline = '';
+            }
+        }
+    });
+
+    // Update the counter badge
+    const recordsSpan = document.querySelector("h3 span");
+    if (recordsSpan) {
+        recordsSpan.textContent = visibleCount + " records";
+    }
+
+    // Refresh selected items toolbar
+    if (typeof updateBulkToolbar === "function") {
+        updateBulkToolbar();
+    }
+}
+</script>
+
+<style>
+.excel-filter-btn i {
+    transition: opacity 0.2s, color 0.2s;
+}
+.excel-filter-btn:hover i {
+    opacity: 0.8 !important;
+    color: #2563eb !important;
+}
+.excel-filter-dropdown input[type="checkbox"] {
+    accent-color: #2563eb;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+.excel-filter-option-item:hover {
+    background-color: #f1f5f9;
+}
+</style>
 
 <?php require_once 'includes/layout_end.php'; ?>
 
