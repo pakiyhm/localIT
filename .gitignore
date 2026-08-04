@@ -28,12 +28,12 @@ uploads/maps/*
 !uploads/logo/.gitkeep
 !uploads/maps/.gitkeep
 
+# Dev temporary folders
+qrd/
+
 # macOS launcher (Windows only for deployment)
 START_SERVER.command
 PACKAGE.command
-
-# QR dev directory
-qrd/
 
 # Package output
 *.zip
