@@ -50,29 +50,56 @@ if ($user_id > 0) {
 
         try {
             $swStmt = $pdo->prepare("
-                SELECT sl.*, s.software_name, sb.batch_name
+                SELECT sl.*, s.name AS software_name, sb.batch_name
                 FROM software_licenses sl
-                JOIN software s ON sl.software_id = s.software_id
-                LEFT JOIN software_batches sb ON sl.batch_id = sb.batch_id
-                WHERE sl.user_id = :u AND sl.license_key IS NOT NULL AND TRIM(sl.license_key) != ''
+                JOIN software_batches sb ON sl.batch_id = sb.batch_id
+                JOIN software s ON sb.software_id = s.software_id
+                WHERE sl.user_id = :u AND sl.status != 'revoked'
             ");
             $swStmt->execute(['u' => $user_id]);
             $software = $swStmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {}
 
-        // Fetch historical returned items (e.g., previously exchanged machines) for Return Certificate
-        if ($type === 'return') {
-            try {
-                $hStmt = $pdo->prepare("
-                    SELECT DISTINCT a.*, l.created_at as return_date
-                    FROM logs l
-                    JOIN assets a ON l.asset_id = a.asset_id
-                    WHERE l.from_user_id = :u AND l.action_type = 'return' AND (a.user_id IS NULL OR a.user_id != :u)
-                    ORDER BY l.created_at DESC
-                ");
-                $hStmt->execute(['u' => $user_id]);
-                $returnedHistory = $hStmt->fetchAll(PDO::FETCH_ASSOC);
-            } catch (Exception $e) {}
+        // Default MS365 & Corporate Email Account for ALL users on all forms with corporate email as Serial/Tag
+        $userEmail = !empty($user['email']) ? trim($user['email']) : (
+            !empty($user['full_name']) ? strtolower(str_replace(' ', '.', trim($user['full_name']))) . '@example.com' : 'Digital Account'
+        );
+
+        $hasMS365 = false;
+        foreach ($software as &$sw) {
+            $sName = strtolower($sw['software_name'] ?? '');
+            if (str_contains($sName, '365') || str_contains($sName, 'email')) {
+                $hasMS365 = true;
+                $swKey = trim($sw['license_key'] ?? '');
+                if ($swKey === '' || $swKey === 'Digital Account' || $swKey === 'Digital License') {
+                    $sw['license_key'] = $userEmail;
+                }
+            }
+        }
+        unset($sw);
+
+        if (!$hasMS365) {
+            $software[] = [
+                'software_name' => 'Microsoft 365 & Corporate Email Account',
+                'license_key'   => $userEmail,
+                'batch_name'    => '—'
+            ];
+        }
+
+        // For Return or Resignation Clearance, also ensure VPN is included if not already present
+        if ($type === 'return' || $reason === 'resignation') {
+            $hasVPN = false;
+            foreach ($software as $sw) {
+                $sName = strtolower($sw['software_name'] ?? '');
+                if (str_contains($sName, 'vpn')) $hasVPN = true;
+            }
+            if (!$hasVPN) {
+                $software[] = [
+                    'software_name' => 'Corporate VPN & Remote Network Access',
+                    'license_key'   => 'Digital Account',
+                    'batch_name'    => '—'
+                ];
+            }
         }
     }
 } elseif ($asset_id > 0) {
@@ -113,25 +140,19 @@ if (!$user && empty($assets)) {
     die("<div style='font-family:sans-serif; padding:40px; text-align:center;'>No valid employee or equipment record selected for Handover Certificate. <br><br><a href='javascript:window.close()'>Close Window</a></div>");
 }
 
-// Single Identifier Priority: Hostname > Service Tag > Serial Number > Name > Model > Category
+// Display Identifier Priority for Description Column (Avoids Serial Duplication)
 function getItemDisplayIdentifier($item) {
     $hostname   = trim($item['hostname'] ?? '');
-    $serviceTag = trim($item['service_tag'] ?? '');
-    $sn         = trim($item['serial_number'] ?? '');
-    $name       = trim($item['name'] ?? '');
     $model      = trim($item['model'] ?? '');
+    $name       = trim($item['name'] ?? '');
     $cat        = trim($item['category'] ?? 'Equipment');
 
     if ($hostname !== '' && $hostname !== '—') {
         return $hostname;
-    } elseif ($serviceTag !== '' && $serviceTag !== '—') {
-        return $serviceTag;
-    } elseif ($sn !== '' && $sn !== '—' && $sn !== 'NO-SERIAL') {
-        return $sn;
-    } elseif ($name !== '' && $name !== '—') {
-        return $name;
     } elseif ($model !== '' && $model !== '—') {
         return $model;
+    } elseif ($name !== '' && $name !== '—') {
+        return $name;
     } else {
         return $cat;
     }
@@ -164,7 +185,7 @@ $purposeText = ($type === 'exchange')
         font-family: 'Inter', system-ui, sans-serif;
         background: #090d16;
         margin: 0;
-        padding: 24px;
+        padding: 20px;
         color: #0f172a;
         -webkit-font-smoothing: antialiased;
     }
@@ -172,11 +193,11 @@ $purposeText = ($type === 'exchange')
     /* Screen Management Toolbar */
     .screen-toolbar {
         max-width: 860px;
-        margin: 0 auto 24px;
+        margin: 0 auto 16px;
         background: #1e293b;
         color: #ffffff;
         border-radius: 12px;
-        padding: 16px 22px;
+        padding: 14px 20px;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -194,7 +215,7 @@ $purposeText = ($type === 'exchange')
         font-size: 12px;
     }
     .btn {
-        padding: 9px 18px;
+        padding: 8px 16px;
         border-radius: 8px;
         border: none;
         background: #2563eb;
@@ -214,11 +235,11 @@ $purposeText = ($type === 'exchange')
     /* Builder Card */
     .builder-card {
         max-width: 860px;
-        margin: 0 auto 24px;
+        margin: 0 auto 18px;
         background: #1e293b;
         border: 1px solid #334155;
         border-radius: 12px;
-        padding: 16px 22px;
+        padding: 14px 20px;
         color: #fff;
     }
     .builder-label {
@@ -227,13 +248,13 @@ $purposeText = ($type === 'exchange')
         color: #94a3b8;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
     }
     .preset-btn-group {
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
     }
     .btn-preset {
         background: #0f172a;
@@ -270,11 +291,11 @@ $purposeText = ($type === 'exchange')
         max-width: 860px;
         margin: 0 auto;
         background: #ffffff;
-        padding: 52px;
+        padding: 38px 44px;
         border-radius: 2px;
         box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
         box-sizing: border-box;
-        border-top: 6px solid #1e293b;
+        border-top: 5px solid #1e293b;
         position: relative;
     }
 
@@ -283,11 +304,11 @@ $purposeText = ($type === 'exchange')
         justify-content: space-between;
         align-items: flex-start;
         border-bottom: 2px solid #0f172a;
-        padding-bottom: 16px;
-        margin-bottom: 24px;
+        padding-bottom: 12px;
+        margin-bottom: 18px;
     }
     .brand-title {
-        font-size: 26px;
+        font-size: 24px;
         font-weight: 900;
         color: #0f172a;
         letter-spacing: -0.03em;
@@ -300,34 +321,34 @@ $purposeText = ($type === 'exchange')
         color: #64748b;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-        margin-top: 6px;
+        margin-top: 4px;
     }
 
     .cert-title-block { text-align: right; }
     .cert-title-en {
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 900;
         color: #0f172a;
         letter-spacing: -0.01em;
         text-transform: uppercase;
     }
     .cert-meta {
-        font-size: 11px;
+        font-size: 10.5px;
         color: #64748b;
-        margin-top: 4px;
+        margin-top: 3px;
     }
 
     /* Grid Details */
     .grid-table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 28px;
+        margin-bottom: 18px;
         border: 1px solid #cbd5e1;
     }
     .grid-table td {
-        padding: 9px 14px;
+        padding: 7px 12px;
         border: 1px solid #cbd5e1;
-        font-size: 12px;
+        font-size: 11.5px;
     }
     .grid-label {
         background: #f8fafc;
@@ -335,29 +356,29 @@ $purposeText = ($type === 'exchange')
         color: #334155;
         width: 18%;
         text-transform: uppercase;
-        font-size: 11px;
+        font-size: 10.5px;
         letter-spacing: 0.02em;
     }
 
     /* Tables */
     .table-section-head {
-        font-size: 11.5px;
+        font-size: 11px;
         font-weight: 800;
         color: #0f172a;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
     .data-table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 24px;
+        margin-bottom: 16px;
     }
     .data-table th {
         background: #0f172a;
         color: #ffffff;
-        padding: 10px 14px;
-        font-size: 10.5px;
+        padding: 8px 12px;
+        font-size: 10px;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.06em;
@@ -365,89 +386,113 @@ $purposeText = ($type === 'exchange')
         border: 1px solid #0f172a;
     }
     .data-table td {
-        padding: 11px 14px;
-        font-size: 12px;
+        padding: 6px 10px;
+        font-size: 11px;
         border: 1px solid #cbd5e1;
         vertical-align: middle;
+        line-height: 1.25;
+        position: relative;
     }
     .data-table tr:nth-child(even) { background: #f8fafc; }
+
+    .td-remark {
+        outline: none;
+        cursor: text;
+        transition: background 0.15s ease;
+    }
+    .td-remark:hover {
+        background-color: #f1f5f9;
+    }
+    .td-remark:focus {
+        background-color: #ffffff;
+        box-shadow: inset 0 0 0 1.5px #2563eb;
+    }
 
     /* Clearance Checklist */
     .clearance-box {
         background: #fafafa;
         border: 1px solid #0f172a;
-        padding: 14px 18px;
-        margin-bottom: 28px;
-        font-size: 11.5px;
+        padding: 10px 14px;
+        margin-bottom: 18px;
+        font-size: 11px;
     }
     .clearance-title {
         font-weight: 800;
         color: #0f172a;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        font-size: 11px;
-        margin-bottom: 10px;
+        font-size: 10.5px;
+        margin-bottom: 8px;
     }
     .clearance-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        gap: 8px;
         font-weight: 600;
         color: #334155;
     }
     .clearance-chk { display: flex; align-items: center; gap: 8px; }
     .box-icon {
-        width: 15px; height: 15px; border: 1.5px solid #0f172a; border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 900; background: #fff;
+        width: 14px; height: 14px; border: 1.5px solid #0f172a; border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 900; background: #fff;
     }
 
     /* Terms */
     .terms-card {
         border-top: 1px solid #e2e8f0;
-        padding-top: 14px;
-        font-size: 10.5px;
+        padding-top: 10px;
+        font-size: 10px;
         color: #64748b;
-        line-height: 1.6;
-        margin-bottom: 32px;
+        line-height: 1.5;
+        margin-bottom: 20px;
     }
 
     /* Signatures */
     .sig-grid {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 40px;
+        margin-top: 24px;
     }
     .sig-cell {
         width: 25%;
         text-align: center;
-        padding: 8px;
+        padding: 4px;
         vertical-align: bottom;
     }
     .sig-line-box {
         border-bottom: 1.5px dashed #64748b;
-        height: 60px;
-        margin-bottom: 8px;
+        height: 42px;
+        margin-bottom: 6px;
     }
     .sig-title {
-        font-size: 11px;
+        font-size: 10.5px;
         font-weight: 800;
         color: #0f172a;
         text-transform: uppercase;
     }
     .sig-sub {
-        font-size: 10px;
+        font-size: 9.5px;
         color: #64748b;
         margin-top: 2px;
     }
 
     .btn-del-item {
-        color: #dc2626; cursor: pointer; font-weight: bold; border: none; background: none; font-size: 16px; margin-left: 6px;
+        color: #dc2626; cursor: pointer; font-weight: bold; border: none; background: none; font-size: 14px; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); line-height: 1; padding: 0;
     }
 
     @media print {
-        body { background: #ffffff; padding: 0; }
+        * {
+            -webkit-print-color-adjust: exact !important;
+            color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
         .screen-toolbar, .builder-card, .btn-del-item { display: none !important; }
-        .certificate-paper { box-shadow: none; padding: 0; border-top: none; }
-        @page { margin: 1.5cm; }
+        .certificate-paper { box-shadow: none !important; padding: 1.2cm !important; border-top: none !important; margin: 0 !important; width: 100% !important; box-sizing: border-box !important; }
+        .grid-label { background: #f8fafc !important; }
+        .data-table th { background: #0f172a !important; color: #ffffff !important; }
+        .data-table tr:nth-child(even) { background: #f8fafc !important; }
+        .clearance-box { background: #fafafa !important; }
+        @page { size: A4 portrait; margin: 0; }
     }
 </style>
 </head>
@@ -484,11 +529,11 @@ $purposeText = ($type === 'exchange')
 <!-- Pure Corporate Printable Certificate Paper -->
 <div class="certificate-paper">
     <!-- Header -->
-    <table style="width:100%; border-collapse:collapse; margin-bottom:24px;">
+    <table style="width:100%; border-collapse:collapse; margin-bottom:18px;">
         <tr>
             <td style="vertical-align:top;">
                 <?php if ($comp_logo && file_exists(__DIR__ . '/' . $comp_logo)): ?>
-                    <img src="<?= htmlspecialchars($comp_logo) ?>" alt="Company Logo" style="max-height:55px; max-width:220px; object-fit:contain; margin-bottom:4px; display:block;">
+                    <img src="<?= htmlspecialchars($comp_logo) ?>" alt="Company Logo" style="max-height:50px; max-width:200px; object-fit:contain; margin-bottom:4px; display:block;">
                     <div class="brand-subtitle"><?= htmlspecialchars($comp_dept) ?></div>
                 <?php else: ?>
                     <div class="brand-title"><?= htmlspecialchars($comp_name) ?></div>
@@ -525,16 +570,16 @@ $purposeText = ($type === 'exchange')
         </tr>
     </table>
 
-    <!-- Equipment List Table -->
+    <!-- Equipment List Table (5-Column Layout with Remark) -->
     <div class="table-section-head">Authorized IT Equipment & Account Provisioning List</div>
     <table class="data-table">
         <thead>
             <tr>
                 <th style="width:5%; text-align:center;">#</th>
-                <th style="width:20%;">Category</th>
-                <th style="width:40%;">Device / Account Description</th>
-                <th style="width:20%;">Serial No. / Tag</th>
-                <th style="width:15%;">Status</th>
+                <th style="width:18%;">Category</th>
+                <th style="width:38%;">Device / Account Description</th>
+                <th style="width:24%;">Serial No. / Tag</th>
+                <th style="width:15%;">Remark</th>
             </tr>
         </thead>
         <tbody id="certTableBody">
@@ -544,47 +589,58 @@ $purposeText = ($type === 'exchange')
             if (empty($allRows) && empty($software)): 
             ?>
             <tr id="emptyCertRow">
-                <td colspan="5" style="text-align:center; color:#94a3b8; padding:24px;">No equipment records found. Click preset buttons above to include digital accounts.</td>
+                <td colspan="5" style="text-align:center; color:#94a3b8; padding:18px;">No equipment records found. Click preset buttons above to include digital accounts.</td>
             </tr>
             <?php else: 
                 foreach ($allRows as $item): 
                     $itemIdentifier = getItemDisplayIdentifier($item);
-                    $sn  = $item['serial_number'] ?: ($item['service_tag'] ?: 'NO-SERIAL');
-                    $cat = $item['category'] ?? 'Hardware';
+                    $snRaw   = trim($item['serial_number'] ?? '');
+                    $tagRaw  = trim($item['service_tag'] ?? '');
+                    $cat     = $item['category'] ?? 'Hardware';
+                    $model   = trim($item['model'] ?? '');
 
-                    if (!empty($item['is_old_returned'])) {
-                        $stText  = 'RETURNED (OLD)';
-                        $stColor = '#dc2626';
-                    } elseif ($type === 'exchange') {
-                        $stText  = 'HANDED OVER (NEW)';
-                        $stColor = '#059669';
-                    } elseif ($type === 'return') {
-                        $stText  = 'RETURNED';
-                        $stColor = '#dc2626';
-                    } else {
-                        $stText  = 'HANDED OVER';
-                        $stColor = '#059669';
-                    }
+                    $primarySn    = $snRaw !== '' && $snRaw !== '—' ? $snRaw : ($tagRaw !== '' && $tagRaw !== '—' ? $tagRaw : 'NO-SERIAL');
+                    $secondaryTag = ($tagRaw !== '' && $tagRaw !== '—' && strtolower($tagRaw) !== strtolower($primarySn)) ? $tagRaw : '';
             ?>
             <tr>
                 <td style="text-align:center; font-weight:700;" class="row-index"><?= $i++ ?></td>
                 <td><strong><?= htmlspecialchars($cat) ?></strong></td>
-                <td><div style="font-weight:600; color:#0f172a;"><?= htmlspecialchars($itemIdentifier) ?></div></td>
-                <td style="font-family:monospace; font-weight:700; color:#0f172a;"><?= htmlspecialchars($sn) ?></td>
-                <td><span style="font-weight:700; color:<?= $stColor ?>;"><?= $stText ?></span></td>
+                <td>
+                    <div style="font-weight:600; color:#0f172a;"><?= htmlspecialchars($itemIdentifier) ?></div>
+                    <?php if ($model !== '' && $model !== '—' && strtolower($model) !== strtolower($itemIdentifier)): ?>
+                        <div style="font-size:10px; color:#64748b; font-weight:500; margin-top:2px;"><?= htmlspecialchars($model) ?></div>
+                    <?php endif; ?>
+                </td>
+                <td style="font-family:monospace; font-weight:700; color:#0f172a; padding-right:22px;">
+                    <div><?= htmlspecialchars($primarySn) ?></div>
+                    <?php if ($secondaryTag !== ''): ?>
+                        <div style="font-size:9.5px; color:#64748b; font-weight:600; margin-top:1px;">TAG: <?= htmlspecialchars($secondaryTag) ?></div>
+                    <?php endif; ?>
+                    <button type="button" onclick="this.closest('tr').remove(); reindexCert();" class="btn-del-item" title="Remove row from this certificate">&times;</button>
+                </td>
+                <td contenteditable="true" class="td-remark" title="Click to type remark"></td>
             </tr>
             <?php endforeach; ?>
 
             <!-- Software Licenses in DB -->
-            <?php foreach ($software as $sw): ?>
+            <?php foreach ($software as $sw): 
+                $swName = trim($sw['software_name'] ?? 'Software License');
+                $swKey  = trim($sw['license_key'] ?? '');
+                if ($swKey === '') {
+                    $swKey = 'Digital License';
+                }
+            ?>
             <tr>
                 <td style="text-align:center; font-weight:700;" class="row-index"><?= $i++ ?></td>
                 <td><strong>Software</strong></td>
                 <td>
-                    <div style="font-weight:600; color:#0f172a;"><?= htmlspecialchars($sw['software_name']) ?></div>
+                    <div style="font-weight:600; color:#0f172a;"><?= htmlspecialchars($swName) ?></div>
                 </td>
-                <td style="font-family:monospace; font-weight:700; color:#0f172a;"><?= htmlspecialchars($sw['license_key'] ?: 'Digital Account') ?></td>
-                <td><span style="font-weight:700; color:<?= $type === 'return' ? '#dc2626' : '#059669' ?>;"><?= $type === 'return' ? 'REVOKED' : 'ACTIVE' ?></span></td>
+                <td style="font-family:monospace; font-weight:700; color:#0f172a; padding-right:22px;">
+                    <?= htmlspecialchars($swKey) ?>
+                    <button type="button" onclick="this.closest('tr').remove(); reindexCert();" class="btn-del-item" title="Remove row from this certificate">&times;</button>
+                </td>
+                <td contenteditable="true" class="td-remark" title="Click to type remark"></td>
             </tr>
             <?php endforeach; endif; ?>
         </tbody>
@@ -669,11 +725,11 @@ $purposeText = ($type === 'exchange')
             <td style="text-align:center; font-weight:700;" class="row-index">${certCount}</td>
             <td><strong>${escapeHtml(cat)}</strong></td>
             <td><div style="font-weight:600; color:#0f172a;">${escapeHtml(name)}</div></td>
-            <td style="font-family:monospace; font-weight:700; color:#0f172a;">Digital Account</td>
-            <td>
-                <span style="font-weight:700; color:<?= $type === 'return' ? '#dc2626' : '#059669' ?>;"><?= $type === 'return' ? 'REVOKED' : 'ACTIVE' ?></span>
+            <td style="font-family:monospace; font-weight:700; color:#0f172a; padding-right:22px;">
+                Digital Account
                 <button type="button" onclick="this.closest('tr').remove(); reindexCert();" class="btn-del-item" title="Remove">&times;</button>
             </td>
+            <td contenteditable="true" class="td-remark" title="Click to type remark"></td>
         `;
 
         tbody.appendChild(tr);

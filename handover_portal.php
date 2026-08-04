@@ -66,6 +66,57 @@ $activeNav = 'handover_portal';
 require_once 'includes/layout.php';
 ?>
 
+<style>
+    .portal-modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(4px);
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .portal-modal-card {
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        width: 100%;
+        max-width: 520px;
+        overflow: hidden;
+        color: #0f172a;
+    }
+    .portal-modal-header {
+        padding: 16px 20px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .portal-modal-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin: 0;
+        color: #0f172a;
+    }
+    .portal-modal-body {
+        padding: 20px;
+    }
+    .portal-modal-footer {
+        padding: 14px 20px;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+</style>
+
 <?php if ($msg === 'created'): ?>
     <div class="alert alert-success"><i class="bi bi-check-circle-fill"></i> New Handover Slip created and registered in Pending Signature tracker.</div>
 <?php endif; ?>
@@ -79,12 +130,12 @@ require_once 'includes/layout.php';
     <div class="alert alert-danger"><i class="bi bi-exclamation-circle-fill"></i> <?= htmlspecialchars($error) ?></div>
 <?php endif; ?>
 
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+<div style="display:flex; justify-space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
     <div>
         <h2 style="margin:0; font-size:1.4rem;"><i class="bi bi-file-earmark-check-fill" style="color:var(--color-accent); margin-right:8px;"></i> Handover & Clearance Portal</h2>
         <p style="margin:4px 0 0; color:var(--color-text-muted); font-size:.9rem;">Issue, track, manage, and batch-print signed IT Handover and Resignation Clearance Certificates.</p>
     </div>
-    <div class="edit-only" style="display:flex; gap:8px;">
+    <div style="display:flex; gap:8px;">
         <a href="settings.php?tab=branding" class="btn btn-ghost" style="border:1px solid var(--color-border); font-weight:600;">
             <i class="bi bi-image" style="color:var(--color-accent);"></i> Upload Logo & Branding
         </a>
@@ -137,8 +188,10 @@ require_once 'includes/layout.php';
     </div>
 </div>
 
-<!-- Forms Table -->
-<form id="batchForm" action="print_batch_handover.php" method="POST" target="_blank">
+<!-- Form for Batch Printing -->
+<form id="batchForm" action="print_batch_handover.php" method="POST" target="_blank" style="display:none;"></form>
+
+<!-- Forms Registry Table -->
 <div class="card" style="box-shadow: var(--shadow-sm); border: 1px solid var(--color-border);">
     <div class="card-header" style="justify-content:space-between; align-items:center; padding:16px 24px; background:var(--color-surface);">
         <div style="display:flex; align-items:center; gap:12px;">
@@ -148,7 +201,7 @@ require_once 'includes/layout.php';
         <div style="display:flex; gap:8px;">
             <a href="handover_portal.php?status=all" class="btn btn-sm <?= $filterStatus === 'all' ? 'btn-primary' : 'btn-ghost' ?>">All</a>
             <a href="handover_portal.php?status=pending_signature" class="btn btn-sm <?= $filterStatus === 'pending_signature' ? 'btn-primary' : 'btn-ghost' ?>" style="color:<?= $filterStatus !== 'pending_signature' ? '#b45309' : '#fff' ?>;">
-                <i class="bi bi-clock-history"></i> Pending Signature (<?= $pendingCount ?>)
+                Pending (<?= $pendingCount ?>)
             </a>
             <a href="handover_portal.php?status=signed" class="btn btn-sm <?= $filterStatus === 'signed' ? 'btn-primary' : 'btn-ghost' ?>" style="color:<?= $filterStatus !== 'signed' ? '#15803d' : '#fff' ?>;">
                 <i class="bi bi-check2-circle"></i> Signed (<?= $signedCount ?>)
@@ -156,21 +209,21 @@ require_once 'includes/layout.php';
         </div>
     </div>
 
-    <div class="card-body tbl-wrap" style="padding:0;">
-        <table>
+    <div class="table-responsive">
+        <table class="table" style="margin:0; font-size:.88rem;">
             <thead>
                 <tr>
                     <th style="width:40px; text-align:center;">
-                        <input type="checkbox" id="selectAllSlips" onclick="toggleSelectAll(this)" title="Select All / Deselect All">
+                        <input type="checkbox" onclick="toggleSelectAll(this)" title="Select All">
                     </th>
                     <th>Doc Reference</th>
-                    <th>Date Issued</th>
                     <th>Employee Name</th>
                     <th>Department</th>
                     <th>Form Type</th>
-                    <th>Signature Status</th>
+                    <th>Date Issued</th>
+                    <th style="text-align:center;">Status</th>
                     <th style="text-align:center;">Signed File</th>
-                    <th style="text-align:center;">Actions</th>
+                    <th style="text-align:center; min-width:160px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -178,32 +231,40 @@ require_once 'includes/layout.php';
                 <tr><td colspan="9"><div class="empty-state"><i class="bi bi-file-earmark-x"></i><p>No handover slips found in this view.</p></div></td></tr>
                 <?php else: foreach ($slips as $s): 
                     $isPending = ($s['status'] === 'pending_signature');
-                    $printUrl  = "print_handover.php?user_id=" . (int)$s['user_id'] . "&type=" . ($s['form_type'] === 'handover' ? 'assign' : 'return') . ($s['form_type'] === 'resignation' ? '&reason=resignation' : '');
+                    $formTypeLabel = ($s['form_type'] === 'resignation' ? 'Resignation Clearance' : ($s['form_type'] === 'return' ? 'Asset Return' : 'Asset Handover'));
+                    $typeBadgeColor = ($s['form_type'] === 'resignation' ? 'background:#fee2e2; color:#991b1b;' : ($s['form_type'] === 'return' ? 'background:#fef3c7; color:#92400e;' : 'background:#e0f2fe; color:#075985;'));
+                    $printUrl = "print_handover.php?user_id=" . (int)$s['user_id'] . "&type=" . ($s['form_type'] === 'resignation' ? 'return' : $s['form_type']) . ($s['form_type'] === 'resignation' ? '&reason=resignation' : '');
                 ?>
                 <tr>
                     <td style="text-align:center;">
-                        <input type="checkbox" name="user_ids[]" value="<?= (int)$s['user_id'] ?>" class="slip-chk" onclick="updateBatchBar()">
+                        <input type="checkbox" name="user_ids[]" form="batchForm" value="<?= (int)$s['user_id'] ?>" class="slip-chk" onclick="updateBatchBar()">
                     </td>
-                    <td style="font-family:monospace; font-weight:700; color:var(--color-text);"><?= htmlspecialchars($s['doc_no']) ?></td>
-                    <td class="text-mono"><?= htmlspecialchars(substr($s['created_at'], 0, 10)) ?></td>
-                    <td><strong><?= htmlspecialchars($s['full_name'] ?? '—') ?></strong></td>
-                    <td><?= htmlspecialchars($s['department'] ?? '—') ?></td>
                     <td>
-                        <?php if ($s['form_type'] === 'handover'): ?>
-                            <span class="badge" style="background:#dbeafe; color:#1d4ed8;">Handover (รับมอบ)</span>
-                        <?php elseif ($s['form_type'] === 'resignation'): ?>
-                            <span class="badge" style="background:#ffe4e6; color:#be123c;">Resignation Clearance</span>
-                        <?php else: ?>
-                            <span class="badge" style="background:#fef3c7; color:#b45309;">Return (ส่งคืน)</span>
+                        <strong style="font-family:monospace; color:var(--color-text);"><?= htmlspecialchars($s['doc_no']) ?></strong>
+                        <?php if ($s['ticket_no']): ?>
+                            <br><small style="color:var(--color-text-muted);">Ref: <?= htmlspecialchars($s['ticket_no']) ?></small>
                         <?php endif; ?>
                     </td>
                     <td>
+                        <strong><?= htmlspecialchars($s['full_name'] ?: 'Unassigned User') ?></strong>
+                        <?php if ($s['emp_id']): ?>
+                            <br><small class="text-muted">(ID: <?= htmlspecialchars($s['emp_id']) ?>)</small>
+                        <?php endif; ?>
+                    </td>
+                    <td><?= htmlspecialchars($s['department'] ?: '—') ?></td>
+                    <td>
+                        <span class="badge" style="<?= $typeBadgeColor ?> font-weight:600; padding:4px 8px; border-radius:4px;">
+                            <?= htmlspecialchars($formTypeLabel) ?>
+                        </span>
+                    </td>
+                    <td><?= date('d M Y', strtotime($s['created_at'])) ?></td>
+                    <td style="text-align:center;">
                         <?php if ($isPending): ?>
-                            <span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a;">
+                            <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:700; padding:4px 8px;">
                                 ⏳ Pending Signature
                             </span>
                         <?php else: ?>
-                            <span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0;">
+                            <span class="badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; font-weight:700; padding:4px 8px;">
                                 ✅ Signed & Complete
                             </span>
                         <?php endif; ?>
@@ -223,15 +284,15 @@ require_once 'includes/layout.php';
                                 <i class="bi bi-printer"></i> Print
                             </a>
                             <?php if ($isPending): ?>
-                            <button type="button" onclick="openMarkSignedModal(<?= $s['slip_id'] ?>, '<?= htmlspecialchars(addslashes($s['doc_no'])) ?>', <?= (int)$s['user_id'] ?>)" class="btn btn-sm edit-only" style="background:#16a34a; color:#fff; padding:4px 8px;" title="Mark as Signed">
+                            <button type="button" onclick="openMarkSignedModal(<?= $s['slip_id'] ?>, '<?= htmlspecialchars(addslashes($s['doc_no'])) ?>', <?= (int)$s['user_id'] ?>)" class="btn btn-sm" style="background:#16a34a; color:#fff; padding:4px 8px; font-weight:600;" title="Mark as Signed">
                                 <i class="bi bi-patch-check"></i> Attach Signed Slip
                             </button>
                             <?php endif; ?>
-                            <form action="actions.php" method="POST" class="edit-only" style="display:inline; margin:0;" data-confirm="Delete slip record <?= htmlspecialchars($s['doc_no']) ?>?">
+                            <form action="actions.php" method="POST" style="display:inline; margin:0;" data-confirm="Delete slip record <?= htmlspecialchars($s['doc_no']) ?>?">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="delete_handover_slip">
                                 <input type="hidden" name="slip_id" value="<?= $s['slip_id'] ?>">
-                                <button type="submit" class="btn btn-ghost btn-sm" style="color:#dc2626; padding:4px 6px;" title="Delete"><i class="bi bi-trash"></i></button>
+                                <button type="submit" class="btn btn-ghost btn-sm edit-only" style="color:#dc2626; padding:4px 6px;" title="Delete"><i class="bi bi-trash"></i></button>
                             </form>
                         </div>
                     </td>
@@ -241,17 +302,16 @@ require_once 'includes/layout.php';
         </table>
     </div>
 </div>
-</form>
 
 <!-- Modal: Batch Reprint All Users Picker -->
-<div id="batchPrintModal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog" style="max-width:600px;">
-        <div class="modal-header">
-            <h3 class="modal-title"><i class="bi bi-printer-fill"></i> Batch Reprint Handover Certificates</h3>
-            <button onclick="document.getElementById('batchPrintModal').style.display='none'" class="modal-close">&times;</button>
+<div id="batchPrintModal" class="portal-modal-backdrop" style="display:none;">
+    <div class="portal-modal-card" style="max-width:600px;">
+        <div class="portal-modal-header">
+            <h3 class="portal-modal-title"><i class="bi bi-printer-fill"></i> Batch Reprint Handover Certificates</h3>
+            <button onclick="document.getElementById('batchPrintModal').style.display='none'" class="modal-close" style="border:none; background:none; font-size:1.4rem; cursor:pointer;">&times;</button>
         </div>
         <form action="print_batch_handover.php" method="POST" target="_blank">
-            <div class="modal-body">
+            <div class="portal-modal-body">
                 <p class="text-muted" style="font-size:.85rem; margin-bottom:12px;">
                     Select employees to generate a continuous multi-page printable document for annual audit or batch signing.
                 </p>
@@ -270,7 +330,7 @@ require_once 'includes/layout.php';
                     <?php endforeach; ?>
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="portal-modal-footer">
                 <button type="button" onclick="document.getElementById('batchPrintModal').style.display='none'" class="btn btn-ghost">Cancel</button>
                 <button type="submit" onclick="document.getElementById('batchPrintModal').style.display='none'" class="btn btn-primary"><i class="bi bi-printer"></i> Generate & Print Batch (ต่อเนื่อง)</button>
             </div>
@@ -279,39 +339,39 @@ require_once 'includes/layout.php';
 </div>
 
 <!-- Modal: Issue New Form -->
-<div id="issueSlipModal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog" style="max-width:500px;">
-        <div class="modal-header">
-            <h3 class="modal-title"><i class="bi bi-file-earmark-plus"></i> Issue Handover / Clearance Form</h3>
-            <button onclick="document.getElementById('issueSlipModal').style.display='none'" class="modal-close">&times;</button>
+<div id="issueSlipModal" class="portal-modal-backdrop" style="display:none;">
+    <div class="portal-modal-card" style="max-width:500px;">
+        <div class="portal-modal-header">
+            <h3 class="portal-modal-title"><i class="bi bi-file-earmark-plus"></i> Issue Handover / Clearance Form</h3>
+            <button onclick="document.getElementById('issueSlipModal').style.display='none'" class="modal-close" style="border:none; background:none; font-size:1.4rem; cursor:pointer;">&times;</button>
         </div>
         <form action="actions.php" method="POST">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="create_handover_slip">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="form-label">Employee</label>
-                    <select name="user_id" class="form-control form-select" required>
+            <div class="portal-modal-body">
+                <div class="form-group" style="margin-bottom:14px;">
+                    <label class="form-label" style="display:block; font-weight:600; margin-bottom:4px;">Employee</label>
+                    <select name="user_id" class="form-control form-select" required style="width:100%;">
                         <option value="">Select Employee...</option>
                         <?php foreach ($users as $u): ?>
                             <option value="<?= $u['user_id'] ?>"><?= htmlspecialchars($u['full_name']) ?><?= $u['emp_id'] ? ' ('.$u['emp_id'].')' : '' ?><?= $u['department'] ? ' — '.$u['department'] : '' ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Form Type</label>
-                    <select name="form_type" class="form-control form-select" required>
+                <div class="form-group" style="margin-bottom:14px;">
+                    <label class="form-label" style="display:block; font-weight:600; margin-bottom:4px;">Form Type</label>
+                    <select name="form_type" class="form-control form-select" required style="width:100%;">
                         <option value="handover">IT Asset Handover Certificate (ใบรับมอบอุปกรณ์)</option>
                         <option value="return">IT Asset Return Certificate (ใบส่งคืนอุปกรณ์)</option>
                         <option value="resignation">IT Resignation Clearance Certificate (ใบคืนพนักงานลาออก)</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Ticket / Ref No. (Optional)</label>
-                    <input type="text" name="ticket_no" class="form-control" placeholder="e.g. TK-20260803">
+                <div class="form-group" style="margin-bottom:14px;">
+                    <label class="form-label" style="display:block; font-weight:600; margin-bottom:4px;">Ticket / Ref No. (Optional)</label>
+                    <input type="text" name="ticket_no" class="form-control" placeholder="e.g. TK-20260803" style="width:100%;">
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="portal-modal-footer">
                 <button type="button" onclick="document.getElementById('issueSlipModal').style.display='none'" class="btn btn-ghost">Cancel</button>
                 <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Register Form</button>
             </div>
@@ -320,33 +380,33 @@ require_once 'includes/layout.php';
 </div>
 
 <!-- Modal: Mark Signed & Upload File -->
-<div id="markSignedModal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog" style="max-width:500px;">
-        <div class="modal-header">
-            <h3 class="modal-title"><i class="bi bi-patch-check"></i> Attach Signed Slip & Complete</h3>
-            <button onclick="document.getElementById('markSignedModal').style.display='none'" class="modal-close">&times;</button>
+<div id="markSignedModal" class="portal-modal-backdrop" style="display:none;">
+    <div class="portal-modal-card" style="max-width:520px;">
+        <div class="portal-modal-header">
+            <h3 class="portal-modal-title"><i class="bi bi-patch-check" style="color:#16a34a;"></i> Attach Signed Slip & Complete</h3>
+            <button onclick="document.getElementById('markSignedModal').style.display='none'" class="modal-close" style="border:none; background:none; font-size:1.4rem; cursor:pointer;">&times;</button>
         </div>
         <form action="actions.php" method="POST" enctype="multipart/form-data">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="mark_slip_signed">
             <input type="hidden" id="signedSlipId" name="slip_id">
             <input type="hidden" id="signedUserId" name="user_id">
-            <div class="modal-body">
-                <p class="text-muted" style="font-size:.85rem; margin-bottom:14px;">
-                    Upload scanned PDF or photo of the signed form for <strong id="signedDocNo"></strong>.
+            <div class="portal-modal-body">
+                <p class="text-muted" style="font-size:.85rem; margin-bottom:16px; background:#f8fafc; padding:10px 14px; border-radius:6px; border:1px solid #e2e8f0;">
+                    Upload scanned PDF or photo of the signed form for <strong id="signedDocNo" style="color:#0f172a;"></strong>.
                 </p>
-                <div class="form-group">
-                    <label class="form-label">Signed Document File (PDF / Image)</label>
-                    <input type="file" name="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,.docx" required>
+                <div class="form-group" style="margin-bottom:14px;">
+                    <label class="form-label" style="display:block; font-weight:600; margin-bottom:4px;">Signed Document File (PDF / Image)</label>
+                    <input type="file" name="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,.docx,.webp" required style="width:100%;">
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Note / Remark</label>
-                    <input type="text" name="note" class="form-control" placeholder="e.g. Signed by employee and HOD on 03 Aug 2026">
+                <div class="form-group" style="margin-bottom:14px;">
+                    <label class="form-label" style="display:block; font-weight:600; margin-bottom:4px;">Note / Remark</label>
+                    <input type="text" name="note" class="form-control" placeholder="e.g. Signed by employee and HOD on 04 Aug 2026" style="width:100%;">
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="portal-modal-footer">
                 <button type="button" onclick="document.getElementById('markSignedModal').style.display='none'" class="btn btn-ghost">Cancel</button>
-                <button type="submit" class="btn btn-primary" style="background:#16a34a;"><i class="bi bi-check-lg"></i> Mark Signed & Save</button>
+                <button type="submit" class="btn btn-primary" style="background:#16a34a; border-color:#16a34a; color:#fff;"><i class="bi bi-check-lg"></i> Attach Signed Slip & Save</button>
             </div>
         </form>
     </div>
@@ -361,21 +421,15 @@ function toggleSelectAll(master) {
 
 function updateBatchBar() {
     const chks = document.querySelectorAll('.slip-chk:checked');
-    const bar = document.getElementById('batchActionBar');
-    const countSpan = document.getElementById('selectedCount');
-    countSpan.innerText = chks.length;
-    if (chks.length > 0) {
-        bar.style.display = 'flex';
-    } else {
-        bar.style.display = 'none';
-        document.getElementById('selectAllSlips').checked = false;
-    }
+    const bar  = document.getElementById('batchActionBar');
+    const cnt  = document.getElementById('selectedCount');
+    cnt.innerText = chks.length;
+    bar.style.display = chks.length > 0 ? 'flex' : 'none';
 }
 
 function unselectAll() {
     const chks = document.querySelectorAll('.slip-chk');
     chks.forEach(c => c.checked = false);
-    document.getElementById('selectAllSlips').checked = false;
     updateBatchBar();
 }
 

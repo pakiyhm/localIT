@@ -1,1 +1,39 @@
+# ============================================
+# IT Asset Management System — .gitignore
+# ============================================
+
+# macOS
 .DS_Store
+__MACOSX/
+
+# IDE / AI Development Artifacts
+.claude/
+.gemini/
+.vscode/
+.idea/
+
+# Development & AI conversation history
+agents.md
+AGENTS.md
+implementation_plan.md
+
+# Real data backup (keep only dummy in repo)
+db/it_assets_REAL_BACKUP.db
+
+# Real uploaded files (signed slips, company logos, floor plans)
+uploads/attachments/*
+uploads/logo/*
+uploads/maps/*
+!uploads/attachments/.gitkeep
+!uploads/logo/.gitkeep
+!uploads/maps/.gitkeep
+
+# macOS launcher (Windows only for deployment)
+START_SERVER.command
+PACKAGE.command
+
+# QR dev directory
+qrd/
+
+# Package output
+*.zip

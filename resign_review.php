@@ -27,6 +27,10 @@ $accessories = $pdo->prepare("
 $accessories->execute(['u' => $user_id]);
 $accessories = $accessories->fetchAll(PDO::FETCH_ASSOC);
 
+$userEmail = !empty($user['email']) ? trim($user['email']) : (
+    !empty($user['full_name']) ? strtolower(str_replace(' ', '.', trim($user['full_name']))) . '@example.com' : ''
+);
+
 $licenses = [];
 try {
     $licenses = $pdo->prepare("
@@ -41,7 +45,36 @@ try {
     $licenses = $licenses->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) { $licenses = []; }
 
-$totalItems = count($assets) + count($accessories) + count($licenses);
+$digitalAccounts = [];
+if ($userEmail !== '') {
+    $digitalAccounts[] = [
+        'id'    => 'ms365',
+        'name'  => 'Microsoft 365 & Corporate Email Account',
+        'meta'  => 'Corporate Email Account',
+        'badge' => $userEmail,
+        'type'  => 'email'
+    ];
+}
+$digitalAccounts[] = [
+    'id'    => 'vpn',
+    'name'  => 'Corporate VPN & Remote Network Access',
+    'meta'  => 'Remote Access Privilege',
+    'badge' => 'VPN Credentials',
+    'type'  => 'vpn'
+];
+
+foreach ($licenses as $lic) {
+    $digitalAccounts[] = [
+        'id'    => 'lic_' . $lic['license_id'],
+        'name'  => $lic['sw_name'],
+        'meta'  => ($lic['category'] ?? 'Software') . ($lic['license_key'] ? ' · Key: ' . $lic['license_key'] : ''),
+        'badge' => $lic['license_key'] ?: 'Assigned License',
+        'type'  => 'license',
+        'license_id' => $lic['license_id']
+    ];
+}
+
+$totalItems = count($assets) + count($accessories) + count($digitalAccounts);
 
 $pageTitle = 'Resignation Review';
 $activeNav = 'users';
@@ -109,7 +142,7 @@ require_once 'includes/layout.php';
     <div style="padding:16px 22px; font-size:.88rem;">
         ตรวจสอบของที่อยู่ในความดูแลของพนักงานคนนี้ก่อนกดประมวลผลการลาออก
         <strong><?= $totalItems ?></strong> รายการ
-        (<?= count($assets) ?> assets · <?= count($accessories) ?> accessories · <?= count($licenses) ?> licenses)
+        (<?= count($assets) ?> assets · <?= count($accessories) ?> accessories · <?= count($digitalAccounts) ?> digital accounts &amp; email)
     </div>
 </div>
 
@@ -207,25 +240,37 @@ require_once 'includes/layout.php';
     </div>
     <?php endif; ?>
 
-    <!-- Licenses -->
-    <?php if (!empty($licenses)): ?>
+    <!-- Digital Accounts & Email Assets -->
+    <?php if (!empty($digitalAccounts)): ?>
     <div class="card" style="margin-bottom:14px;">
-        <div class="card-header"><h3><i class="bi bi-key"></i> Software Licenses (<?= count($licenses) ?>)</h3></div>
-        <?php foreach ($licenses as $lic): ?>
+        <div class="card-header">
+            <h3><i class="bi bi-shield-lock-fill" style="color:var(--color-accent);"></i> Digital Accounts &amp; Email Assets (<?= count($digitalAccounts) ?>)</h3>
+        </div>
+        <?php foreach ($digitalAccounts as $da): ?>
         <div class="rr-item-row">
             <div>
-                <div class="rr-item-name"><?= htmlspecialchars($lic['sw_name']) ?></div>
+                <div class="rr-item-name" style="display:flex; align-items:center; gap:8px;">
+                    <?= htmlspecialchars($da['name']) ?>
+                    <?php if (!empty($da['badge'])): ?>
+                        <span class="badge" style="background:#e0f2fe; color:#0369a1; font-family:monospace; font-weight:700; font-size:.78rem; padding:3px 8px; border-radius:4px;">
+                            <?= htmlspecialchars($da['badge']) ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
                 <div class="rr-item-meta">
-                    <?= htmlspecialchars($lic['category'] ?? '—') ?>
-                    <?= $lic['expiry_date'] ? ' · expires ' . htmlspecialchars($lic['expiry_date']) : '' ?>
+                    <?= htmlspecialchars($da['meta']) ?>
                 </div>
             </div>
             <div class="rr-radio-group">
-                <input type="radio" name="lic_disposition[<?= $lic['license_id'] ?>]" id="lic_<?= $lic['license_id'] ?>_revoke" value="revoke" checked>
-                <label for="lic_<?= $lic['license_id'] ?>_revoke"><i class="bi bi-slash-circle"></i> เพิกถอน</label>
-
-                <input type="radio" name="lic_disposition[<?= $lic['license_id'] ?>]" id="lic_<?= $lic['license_id'] ?>_keep" value="keep">
-                <label for="lic_<?= $lic['license_id'] ?>_keep"><i class="bi bi-bookmark"></i> เก็บไว้ไป assign ใหม่</label>
+                <?php if ($da['type'] === 'license'): ?>
+                    <input type="radio" name="lic_disposition[<?= $da['license_id'] ?>]" id="lic_<?= $da['license_id'] ?>_revoke" value="revoke" checked>
+                    <label for="lic_<?= $da['license_id'] ?>_revoke"><i class="bi bi-slash-circle"></i> เพิกถอนสิทธิ์</label>
+                    <input type="radio" name="lic_disposition[<?= $da['license_id'] ?>]" id="lic_<?= $da['license_id'] ?>_keep" value="keep">
+                    <label for="lic_<?= $da['license_id'] ?>_keep"><i class="bi bi-bookmark"></i> เก็บไว้ไป assign ใหม่</label>
+                <?php else: ?>
+                    <input type="radio" name="digital_disposition[<?= $da['id'] ?>]" id="da_<?= $da['id'] ?>_revoke" value="revoke" checked>
+                    <label for="da_<?= $da['id'] ?>_revoke"><i class="bi bi-slash-circle"></i> เพิกถอนสิทธิ์ (Disable)</label>
+                <?php endif; ?>
             </div>
         </div>
         <?php endforeach; ?>

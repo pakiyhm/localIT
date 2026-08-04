@@ -1,5 +1,5 @@
 <?php
-// db/seed_dummy.php — Clear real data and insert dummy data for portfolio
+// db/seed_dummy.php — Clear real data and insert dummy data for Git repository
 require_once __DIR__ . '/../includes/db_connect.php';
 
 echo "Cleaning existing data...\n";
@@ -9,72 +9,129 @@ $pdo->exec("PRAGMA foreign_keys = OFF;");
 
 // Clear all tables
 $tables = [
-    'users', 'locations', 'assets', 'asset_relations', 'logs', 
-    'consumable_logs', 'accessories', 'maps', 'map_zones', 'map_pin_positions',
-    'software', 'software_batches', 'software_licenses', 'software_license_logs',
-    'incoming_orders', 'asset_attachments'
+    'alert_notifications_sent', 'map_pin_positions', 'map_zones', 'maps',
+    'asset_attachments', 'handover_slips',
+    'software_license_logs', 'software_licenses', 'software_batches', 'software',
+    'consumable_logs', 'incoming_orders',
+    'logs', 'asset_relations', 'accessories', 'assets',
+    'users', 'locations'
 ];
 
 foreach ($tables as $t) {
     try {
         $pdo->exec("DELETE FROM $t");
-        $pdo->exec("DELETE FROM sqlite_sequence WHERE name='$t'"); // reset autoincrement
-    } catch (Exception $e) {
-        // ignore if table doesn't exist
-    }
+        $pdo->exec("DELETE FROM sqlite_sequence WHERE name='$t'");
+    } catch (Exception $e) { /* ignore */ }
 }
 $pdo->exec("PRAGMA foreign_keys = ON;");
 
+// Reset system_settings to defaults (keep structure, reset branding)
+try {
+    $pdo->exec("UPDATE system_settings SET setting_value = '123456' WHERE setting_key = 'edit_pin'");
+    $pdo->exec("UPDATE system_settings SET setting_value = '60' WHERE setting_key = 'session_minutes'");
+    $pdo->exec("DELETE FROM system_settings WHERE setting_key = 'company_logo'");
+} catch (Exception $e) { /* ignore */ }
+
 echo "Inserting dummy data...\n";
 
-// Dummy locations
-$pdo->exec("INSERT INTO locations (location_name) VALUES ('Head Office - Floor 1')");
-$pdo->exec("INSERT INTO locations (location_name) VALUES ('Head Office - Floor 2')");
-$pdo->exec("INSERT INTO locations (location_name) VALUES ('Branch A')");
-$pdo->exec("INSERT INTO locations (location_name) VALUES ('Server Room')");
+// ── Locations ──
+$locs = ['Head Office - Floor 1', 'Head Office - Floor 2', 'Branch Office A', 'Server Room', 'Warehouse'];
+foreach ($locs as $l) {
+    $pdo->exec("INSERT INTO locations (location_name) VALUES ('$l')");
+}
 
-// Dummy users
+// ── Users ──
 $users = [
-    ['emp_id' => 'IT001', 'full_name' => 'John Doe (IT Admin)', 'department' => 'IT', 'location_id' => 1],
-    ['emp_id' => 'HR001', 'full_name' => 'Jane Smith', 'department' => 'HR', 'location_id' => 2],
-    ['emp_id' => 'FN001', 'full_name' => 'Alice Johnson', 'department' => 'Finance', 'location_id' => 1],
-    ['emp_id' => 'MK001', 'full_name' => 'Bob Brown', 'department' => 'Marketing', 'location_id' => 3],
-    ['emp_id' => 'IT002', 'full_name' => 'Charlie Davis', 'department' => 'IT Support', 'location_id' => 1],
+    ['IT001', 'John Doe',      'IT',        'john.doe@example.com',      1],
+    ['HR001', 'Jane Smith',    'HR',        'jane.smith@example.com',    2],
+    ['FN001', 'Alice Johnson', 'Finance',   'alice.johnson@example.com', 1],
+    ['MK001', 'Bob Brown',     'Marketing', 'bob.brown@example.com',     3],
+    ['IT002', 'Charlie Davis', 'IT Support','charlie.davis@example.com', 1],
+    ['EG001', 'David Wilson',  'Engineering','david.wilson@example.com', 2],
 ];
-$stmtUser = $pdo->prepare("INSERT INTO users (emp_id, full_name, department, location_id) VALUES (?, ?, ?, ?)");
-foreach ($users as $u) {
-    $stmtUser->execute([$u['emp_id'], $u['full_name'], $u['department'], $u['location_id']]);
-}
+$stmtU = $pdo->prepare("INSERT INTO users (emp_id, full_name, department, email, location_id) VALUES (?,?,?,?,?)");
+foreach ($users as $u) { $stmtU->execute($u); }
 
-// Dummy assets
+// ── Assets ──
 $assets = [
-    ['category' => 'Laptop', 'hostname' => 'LPT-IT001', 'serial_number' => 'SN-LPT001', 'status' => 'deployed', 'ownership_type' => 'Buy', 'user_id' => 1, 'location_id' => 1],
-    ['category' => 'Laptop', 'hostname' => 'LPT-HR001', 'serial_number' => 'SN-LPT002', 'status' => 'deployed', 'ownership_type' => 'Buy', 'user_id' => 2, 'location_id' => 2],
-    ['category' => 'Desktop', 'hostname' => 'DSK-FN001', 'serial_number' => 'SN-DSK001', 'status' => 'deployed', 'ownership_type' => 'Buy', 'user_id' => 3, 'location_id' => 1],
-    ['category' => 'Switch', 'hostname' => 'SW-CORE-01', 'serial_number' => 'SN-SW001', 'status' => 'deployed', 'ownership_type' => 'Buy', 'user_id' => null, 'location_id' => 4],
-    ['category' => 'Laptop', 'hostname' => 'LPT-SPARE01', 'serial_number' => 'SN-LPT003', 'status' => 'in_stock', 'ownership_type' => 'Rent', 'user_id' => null, 'location_id' => 1],
+    ['Laptop',  'LPT-IT001',   'SN-A0001', 'deployed', 'Buy',  'Dell Latitude 5540',  '2024', 'SVCTAG01', 1, 1, null, '2027-03-15'],
+    ['Laptop',  'LPT-HR001',   'SN-A0002', 'deployed', 'Rent', 'HP EliteBook 840 G10','2024', 'SVCTAG02', 2, 2, date('Y-m-d', strtotime('+25 days')), '2026-12-31'],
+    ['Desktop', 'DSK-FN001',   'SN-A0003', 'deployed', 'Buy',  'Lenovo ThinkCentre',  '2023', null,       3, 1, null, '2026-08-31'],
+    ['Laptop',  'LPT-MK001',   'SN-A0004', 'deployed', 'Buy',  'Dell Latitude 7440',  '2024', 'SVCTAG04', 4, 3, null, '2027-06-30'],
+    ['Switch',  'SW-CORE-01',  'SN-A0005', 'deployed', 'Buy',  'Cisco Catalyst 9200', '2022', null,       null, 4, null, '2025-12-31'],
+    ['Laptop',  'LPT-SPARE01', 'SN-A0006', 'in_stock', 'Rent', 'HP ProBook 450 G10',  '2024', 'SVCTAG06', null, 5, date('Y-m-d', strtotime('+60 days')), null],
+    ['Laptop',  'LPT-SPARE02', 'SN-A0007', 'in_stock', 'Buy',  'Dell Latitude 5550',  '2025', 'SVCTAG07', null, 5, null, null],
+    ['Printer', 'PRT-F1-01',   'SN-A0008', 'deployed', 'Buy',  'Brother HL-L5200DW',  '2023', null,       null, 1, null, null],
+    ['Server',  'SRV-DC-01',   'SN-A0009', 'deployed', 'Buy',  'Dell PowerEdge R750', '2022', 'SVCTAG09', null, 4, null, '2027-12-31'],
+    ['Laptop',  'LPT-RPR01',   'SN-A0010', 'repair',   'Buy',  'Lenovo ThinkPad T14', '2023', null,       null, 1, null, null],
 ];
-$stmtAsset = $pdo->prepare("INSERT INTO assets (category, hostname, serial_number, status, ownership_type, user_id, location_id, lease_expiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-foreach ($assets as $a) {
-    $lease_expiry = ($a['ownership_type'] === 'Rent') ? date('Y-m-d', strtotime('+30 days')) : null;
-    $stmtAsset->execute([$a['category'], $a['hostname'], $a['serial_number'], $a['status'], $a['ownership_type'], $a['user_id'], $a['location_id'], $lease_expiry]);
-}
+$stmtA = $pdo->prepare("INSERT INTO assets (category, hostname, serial_number, status, ownership_type, model, purchase_year, service_tag, user_id, location_id, lease_expiry, end_of_life_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+foreach ($assets as $a) { $stmtA->execute($a); }
 
-// Dummy accessories
-$accessories = [
-    ['category' => 'Monitor', 'name' => 'Dell 24"', 'serial_number' => 'SN-MON001', 'status' => 'deployed', 'ownership_type' => 'Buy', 'user_id' => 1, 'parent_asset_id' => 1],
-    ['category' => 'Monitor', 'name' => 'HP 27"', 'serial_number' => 'SN-MON002', 'status' => 'in_stock', 'ownership_type' => 'Buy', 'user_id' => null, 'parent_asset_id' => null],
-    ['category' => 'Keyboard', 'name' => 'Logitech MX Keys', 'serial_number' => 'SN-KB001', 'status' => 'deployed', 'ownership_type' => 'Buy', 'user_id' => 2, 'parent_asset_id' => 2],
+// Set repair details for LPT-RPR01
+$pdo->exec("UPDATE assets SET repair_shop='ABC Service Center', repair_sent_at='".date('Y-m-d', strtotime('-10 days'))."', repair_eta='".date('Y-m-d', strtotime('+5 days'))."', repair_note='Screen cracked' WHERE hostname='LPT-RPR01'");
+
+// ── Accessories ──
+$accs = [
+    ['Monitor',        'Dell U2422H 24"',       'SN-ACC001', 'deployed', 'Buy', 'Dell U2422H',         1, 1, 1],
+    ['Monitor',        'HP E24 G5',             'SN-ACC002', 'deployed', 'Buy', 'HP E24 G5',           2, 2, 2],
+    ['Keyboard',       'Logitech MX Keys',      'SN-ACC003', 'deployed', 'Buy', 'MX Keys',             1, 1, null],
+    ['Mouse',          'Logitech MX Master 3S', 'SN-ACC004', 'deployed', 'Buy', 'MX Master 3S',        1, 1, null],
+    ['Docking Station','Dell WD19S',            'SN-ACC005', 'deployed', 'Buy', 'WD19S Thunderbolt',   3, 1, null],
+    ['Headset',        'Jabra Evolve2 75',      'SN-ACC006', 'in_stock', 'Buy', 'Evolve2 75',          null, 5, null],
+    ['Webcam',         'Logitech Brio 500',     'SN-ACC007', 'in_stock', 'Buy', 'Brio 500',            null, 5, null],
+    ['Monitor',        'Samsung 27" FHD',       'SN-ACC008', 'in_stock', 'Buy', 'Samsung LS27',        null, 5, null],
 ];
-$stmtAcc = $pdo->prepare("INSERT INTO accessories (category, name, serial_number, status, ownership_type, user_id, parent_asset_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
-foreach ($accessories as $ac) {
-    $stmtAcc->execute([$ac['category'], $ac['name'], $ac['serial_number'], $ac['status'], $ac['ownership_type'], $ac['user_id'], $ac['parent_asset_id']]);
-}
+$stmtAcc = $pdo->prepare("INSERT INTO accessories (category, name, serial_number, status, ownership_type, model, user_id, location_id, parent_asset_id) VALUES (?,?,?,?,?,?,?,?,?)");
+foreach ($accs as $ac) { $stmtAcc->execute($ac); }
 
-// Dummy consumable logs
-$pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('HDMI Cable', 'in', 50, 1, 'Initial Stock')");
+// ── Software & Licenses ──
+$pdo->exec("INSERT INTO software (name, vendor, category) VALUES ('Microsoft 365 Business', 'Microsoft', 'Productivity')");
+$pdo->exec("INSERT INTO software (name, vendor, category) VALUES ('AutoCAD LT', 'Autodesk', 'Design')");
+$pdo->exec("INSERT INTO software (name, vendor, category) VALUES ('Adobe Creative Cloud', 'Adobe', 'Design')");
+
+$pdo->exec("INSERT INTO software_batches (software_id, batch_name, license_type, purchase_order, purchase_date) VALUES (1, 'M365 Annual 2025', 'Per User', 'PO-2025-001', '2025-01-15')");
+$pdo->exec("INSERT INTO software_batches (software_id, batch_name, license_type, purchase_order, purchase_date) VALUES (2, 'AutoCAD Q1 2025', 'Per User', 'PO-2025-002', '2025-03-01')");
+
+// M365 licenses
+$stmtLic = $pdo->prepare("INSERT INTO software_licenses (batch_id, license_key, status, start_date, expiry_date, user_id) VALUES (?,?,?,?,?,?)");
+$stmtLic->execute([1, 'M365-KEY-001', 'assigned', '2025-01-15', '2026-01-14', 1]);
+$stmtLic->execute([1, 'M365-KEY-002', 'assigned', '2025-01-15', '2026-01-14', 2]);
+$stmtLic->execute([1, 'M365-KEY-003', 'assigned', '2025-01-15', '2026-01-14', 3]);
+$stmtLic->execute([1, 'M365-KEY-004', 'active',   '2025-01-15', '2026-01-14', null]);
+
+// AutoCAD licenses
+$stmtLic->execute([2, 'ACAD-KEY-001', 'assigned', '2025-03-01', '2026-02-28', 6]);
+$stmtLic->execute([2, 'ACAD-KEY-002', 'active',   '2025-03-01', '2026-02-28', null]);
+
+// ── Consumable Logs ──
+$pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('HDMI Cable 2m', 'in', 50, 1, 'Initial Stock')");
 $pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('Toner TN-2480', 'in', 10, 1, 'Initial Stock')");
-$pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('HDMI Cable', 'out', 2, 2, 'For HR Dept')");
+$pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('LAN Cable Cat6 3m', 'in', 100, 1, 'Initial Stock')");
+$pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('HDMI Cable 2m', 'out', 5, 2, 'For HR department')");
+$pdo->exec("INSERT INTO consumable_logs (item_name, action, quantity, user_id, note) VALUES ('Toner TN-2480', 'out', 2, 1, 'Replace printer Floor 1')");
 
-echo "Dummy data seeded successfully!\n";
+// ── Sample Logs ──
+$pdo->exec("INSERT INTO logs (asset_id, action_type, to_user_id, note, created_at) VALUES (1, 'assign', 1, 'Initial deployment', datetime('now', '-30 days'))");
+$pdo->exec("INSERT INTO logs (asset_id, action_type, to_user_id, note, created_at) VALUES (2, 'assign', 2, 'New hire equipment', datetime('now', '-25 days'))");
+$pdo->exec("INSERT INTO logs (asset_id, action_type, to_user_id, note, created_at) VALUES (3, 'assign', 3, 'Workstation setup', datetime('now', '-20 days'))");
+$pdo->exec("INSERT INTO logs (asset_id, action_type, to_user_id, note, created_at) VALUES (4, 'assign', 4, 'Marketing laptop', datetime('now', '-15 days'))");
+$pdo->exec("INSERT INTO logs (asset_id, action_type, note, created_at) VALUES (10, 'repair', 'Screen cracked - sent to ABC Service', datetime('now', '-10 days'))");
+$pdo->exec("INSERT INTO logs (accessory_id, action_type, to_user_id, note, created_at) VALUES (1, 'assign', 1, 'Monitor for IT admin', datetime('now', '-30 days'))");
+$pdo->exec("INSERT INTO logs (accessory_id, action_type, to_user_id, note, created_at) VALUES (2, 'assign', 2, 'Monitor for HR', datetime('now', '-25 days'))");
+
+// ── Incoming Order ──
+$pdo->exec("INSERT INTO incoming_orders (category, model, qty_expected, qty_received, vendor, purchase_order, ownership_type, ordered_date, eta_date, status, note)
+            VALUES ('Laptop', 'Dell Latitude 5560', 3, 0, 'Dell Technologies', 'PO-2026-010', 'Buy', '".date('Y-m-d', strtotime('-5 days'))."', '".date('Y-m-d', strtotime('+10 days'))."', 'ordered', 'New hire batch Q3')");
+
+echo "\n✅ Dummy data seeded successfully!\n";
+echo "   - 5 Locations\n";
+echo "   - 6 Users (with emails)\n";
+echo "   - 10 Assets (2 spare, 1 repair)\n";
+echo "   - 8 Accessories (3 spare)\n";
+echo "   - 3 Software, 6 Licenses\n";
+echo "   - 5 Consumable transactions\n";
+echo "   - 7 Audit logs\n";
+echo "   - 1 Incoming order\n";
+echo "\n";
 ?>
