@@ -155,9 +155,14 @@ function process_user_csv_diff($pdo, $handle, $headers, $column_mapping, &$stats
         $existingUsersByName[strtolower(trim($u['full_name']))] = $u;
     }
     
-    $locationsByName = [];
+    $locationsMap = [];
     foreach ($pdo->query("SELECT location_id, location_name FROM locations")->fetchAll(PDO::FETCH_ASSOC) as $l) {
-        $locationsByName[strtolower($l['location_name'])] = $l['location_id'];
+        $locationsMap[$l['location_id']] = $l['location_name'];
+    }
+    
+    $locationsByName = [];
+    foreach ($locationsMap as $lid => $lname) {
+        $locationsByName[strtolower($lname)] = $lid;
     }
     
     while (($data = fgetcsv($handle, 10000, ',', '"', "\\")) !== FALSE) {
@@ -182,10 +187,11 @@ function process_user_csv_diff($pdo, $handle, $headers, $column_mapping, &$stats
             continue;
         }
         
-        $row['location_id'] = null;
-        if (!empty($row['location_name'])) {
+        if (isset($row['location_name']) && $row['location_name'] !== '') {
             $loc = strtolower($row['location_name']);
-            if (isset($locationsByName[$loc])) {
+            if (in_array($loc, ['—', 'none', 'unassigned', 'clear'])) {
+                $row['location_id'] = null;
+            } elseif (isset($locationsByName[$loc])) {
                 $row['location_id'] = $locationsByName[$loc];
             } else {
                 $stats['error']++;
@@ -205,8 +211,19 @@ function process_user_csv_diff($pdo, $handle, $headers, $column_mapping, &$stats
             $changes = [];
             $fieldsToCompare = ['emp_id', 'full_name', 'email', 'department', 'location_id'];
             foreach ($fieldsToCompare as $field) {
-                if (isset($row[$field]) && $row[$field] !== '' && (string)$row[$field] !== (string)$existing[$field]) {
-                    $changes[$field] = ['old' => $existing[$field], 'new' => $row[$field]];
+                if (array_key_exists($field, $row) && $row[$field] !== '' && (string)$row[$field] !== (string)$existing[$field]) {
+                    if ($field === 'location_id') {
+                        $oldName = !empty($existing['location_id']) ? ($locationsMap[$existing['location_id']] ?? '—') : '—';
+                        $newName = !empty($row['location_id']) ? ($locationsMap[$row['location_id']] ?? '—') : '—';
+                        $changes[$field] = [
+                            'old' => $existing[$field], 
+                            'new' => $row[$field],
+                            'old_label' => $oldName,
+                            'new_label' => $newName
+                        ];
+                    } else {
+                        $changes[$field] = ['old' => $existing[$field], 'new' => $row[$field]];
+                    }
                 }
             }
             if (!empty($changes)) {
@@ -233,14 +250,17 @@ function process_asset_csv_diff($pdo, $handle, $headers, $column_mapping, &$stat
     $existingAssets = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $assetsBySN = [];
     $assetsByHostname = [];
+    $assetsByTag = [];
     foreach ($existingAssets as $asset) {
         if (!empty($asset['serial_number'])) $assetsBySN[$asset['serial_number']] = $asset;
         if (!empty($asset['hostname'])) $assetsByHostname[$asset['hostname']] = $asset;
+        if (!empty($asset['service_tag'])) $assetsByTag[$asset['service_tag']] = $asset;
     }
     
     // Fetch relationships
     $usersByEmpId = [];
     $usersByName = [];
+    $usersMap = [];
     foreach ($pdo->query("SELECT user_id, emp_id, full_name FROM users")->fetchAll(PDO::FETCH_ASSOC) as $u) {
         if (!empty($u['emp_id'])) {
             $usersByEmpId[$u['emp_id']] = $u['user_id'];
@@ -248,11 +268,17 @@ function process_asset_csv_diff($pdo, $handle, $headers, $column_mapping, &$stat
         if (!empty($u['full_name'])) {
             $usersByName[strtolower(trim($u['full_name']))] = $u['user_id'];
         }
+        $usersMap[$u['user_id']] = $u['emp_id'] ?: $u['full_name'];
+    }
+    
+    $locationsMap = [];
+    foreach ($pdo->query("SELECT location_id, location_name FROM locations")->fetchAll(PDO::FETCH_ASSOC) as $l) {
+        $locationsMap[$l['location_id']] = $l['location_name'];
     }
     
     $locationsByName = [];
-    foreach ($pdo->query("SELECT location_id, location_name FROM locations")->fetchAll(PDO::FETCH_ASSOC) as $l) {
-        $locationsByName[strtolower($l['location_name'])] = $l['location_id'];
+    foreach ($locationsMap as $lid => $lname) {
+        $locationsByName[strtolower($lname)] = $lid;
     }
     
     while (($data = fgetcsv($handle, 10000, ',', '"', "\\")) !== FALSE) {
@@ -272,18 +298,21 @@ function process_asset_csv_diff($pdo, $handle, $headers, $column_mapping, &$stat
             continue;
         }
         
-        $sn = $row['serial_number'] ?? '';
-        $hn = $row['hostname'] ?? '';
+        $sn  = $row['serial_number'] ?? '';
+        $hn  = $row['hostname'] ?? '';
+        $tag = $row['service_tag'] ?? '';
         
-        if (empty($sn) && empty($hn)) {
+        if (empty($sn) && empty($hn) && empty($tag)) {
             $stats['error']++;
-            $rows[] = ['status' => 'error', 'row_index' => $rowIndex, 'msg' => 'Must provide serial_number or hostname', 'data' => $row];
+            $rows[] = ['status' => 'error', 'row_index' => $rowIndex, 'msg' => 'Must provide serial_number, service_tag or hostname', 'data' => $row];
             continue;
         }
         
         $match = null;
         if (!empty($sn) && isset($assetsBySN[$sn])) {
             $match = $assetsBySN[$sn];
+        } elseif (!empty($tag) && isset($assetsByTag[$tag])) {
+            $match = $assetsByTag[$tag];
         } elseif (!empty($hn) && isset($assetsByHostname[$hn])) {
             $match = $assetsByHostname[$hn];
         }
@@ -292,7 +321,9 @@ function process_asset_csv_diff($pdo, $handle, $headers, $column_mapping, &$stat
         if (isset($row['emp_id']) && $row['emp_id'] !== '') {
             $assigned = $row['emp_id'];
             $assignedLower = strtolower(trim($assigned));
-            if (isset($usersByEmpId[$assigned])) {
+            if (in_array($assignedLower, ['—', 'none', 'unassigned', 'clear'])) {
+                $row['user_id'] = null; // Clear field
+            } elseif (isset($usersByEmpId[$assigned])) {
                 $row['user_id'] = $usersByEmpId[$assigned];
             } elseif (isset($usersByName[$assignedLower])) {
                 $row['user_id'] = $usersByName[$assignedLower];
@@ -301,32 +332,32 @@ function process_asset_csv_diff($pdo, $handle, $headers, $column_mapping, &$stat
                 $rows[] = ['status' => 'error', 'row_index' => $rowIndex, 'msg' => 'Assigned To (emp_id or Name) not found', 'data' => $row];
                 continue;
             }
-        } elseif (isset($row['emp_id']) && $row['emp_id'] === '') {
-            $row['user_id'] = null; // Clear field
         }
         
         if (isset($row['location_name']) && $row['location_name'] !== '') {
             $locLower = strtolower($row['location_name']);
-            if (isset($locationsByName[$locLower])) {
+            if (in_array($locLower, ['—', 'none', 'unassigned', 'clear'])) {
+                $row['location_id'] = null; // Clear field
+            } elseif (isset($locationsByName[$locLower])) {
                 $row['location_id'] = $locationsByName[$locLower];
             } else {
                 $stats['error']++;
                 $rows[] = ['status' => 'error', 'row_index' => $rowIndex, 'msg' => 'Location not found', 'data' => $row];
                 continue;
             }
-        } elseif (isset($row['location_name']) && $row['location_name'] === '') {
-            $row['location_id'] = null; // Clear field
         }
         
-        // Check for conflicts (SN matches one, HN matches another)
-        if (!empty($sn) && !empty($hn)) {
-            $matchSN = $assetsBySN[$sn] ?? null;
-            $matchHN = $assetsByHostname[$hn] ?? null;
-            if ($matchSN && $matchHN && $matchSN['asset_id'] !== $matchHN['asset_id']) {
-                $stats['error']++;
-                $rows[] = ['status' => 'error', 'row_index' => $rowIndex, 'msg' => 'Conflict: SN and Hostname belong to different assets in DB', 'data' => $row];
-                continue;
-            }
+        // Check for conflicts (SN, Hostname, or Service Tag pointing to different records)
+        $matchedIds = [];
+        if (!empty($sn) && isset($assetsBySN[$sn])) $matchedIds['sn'] = $assetsBySN[$sn]['asset_id'];
+        if (!empty($tag) && isset($assetsByTag[$tag])) $matchedIds['tag'] = $assetsByTag[$tag]['asset_id'];
+        if (!empty($hn) && isset($assetsByHostname[$hn])) $matchedIds['hn'] = $assetsByHostname[$hn]['asset_id'];
+        
+        $uniqueMatchedIds = array_unique(array_values($matchedIds));
+        if (count($uniqueMatchedIds) > 1) {
+            $stats['error']++;
+            $rows[] = ['status' => 'error', 'row_index' => $rowIndex, 'msg' => 'Conflict: Serial, Service Tag, or Hostname point to different assets in DB', 'data' => $row];
+            continue;
         }
         
         if ($match) {
@@ -350,9 +381,47 @@ function process_asset_csv_diff($pdo, $handle, $headers, $column_mapping, &$stat
                 }
                 
                 if (isset($match[$key]) && $match[$key] !== $val) {
-                    $changes[$key] = ['old' => $match[$key], 'new' => $val];
+                    if ($key === 'location_id') {
+                        $oldName = !empty($match['location_id']) ? ($locationsMap[$match['location_id']] ?? '—') : '—';
+                        $newName = !empty($val) ? ($locationsMap[$val] ?? '—') : '—';
+                        $changes[$key] = [
+                            'old' => $match[$key], 
+                            'new' => $val,
+                            'old_label' => $oldName,
+                            'new_label' => $newName
+                        ];
+                    } elseif ($key === 'user_id') {
+                        $oldName = !empty($match['user_id']) ? ($usersMap[$match['user_id']] ?? '—') : '—';
+                        $newName = !empty($val) ? ($usersMap[$val] ?? '—') : '—';
+                        $changes[$key] = [
+                            'old' => $match[$key], 
+                            'new' => $val,
+                            'old_label' => $oldName,
+                            'new_label' => $newName
+                        ];
+                    } else {
+                        $changes[$key] = ['old' => $match[$key], 'new' => $val];
+                    }
                 } elseif (!isset($match[$key]) && $val !== '') {
-                    $changes[$key] = ['old' => '', 'new' => $val];
+                    if ($key === 'location_id') {
+                        $newName = !empty($val) ? ($locationsMap[$val] ?? '—') : '—';
+                        $changes[$key] = [
+                            'old' => '', 
+                            'new' => $val,
+                            'old_label' => '—',
+                            'new_label' => $newName
+                        ];
+                    } elseif ($key === 'user_id') {
+                        $newName = !empty($val) ? ($usersMap[$val] ?? '—') : '—';
+                        $changes[$key] = [
+                            'old' => '', 
+                            'new' => $val,
+                            'old_label' => '—',
+                            'new_label' => $newName
+                        ];
+                    } else {
+                        $changes[$key] = ['old' => '', 'new' => $val];
+                    }
                 }
             }
             
@@ -656,7 +725,10 @@ require_once 'includes/layout.php';
                                                         $dept = '<span style="text-decoration:line-through; color:#dc2626;">' . htmlspecialchars($row['changes']['department']['old'] ?: '-') . '</span> &rarr; <span style="color:#16a34a;">' . htmlspecialchars($row['changes']['department']['new'] ?: '-') . '</span>';
                                                     }
                                                     if (isset($row['changes']['location_id'])) {
-                                                        $loc = '<span style="color:#16a34a;">' . __('Updated') . '</span>';
+                                                        $c = $row['changes']['location_id'];
+                                                        $oldVal = $c['old_label'] ?? $c['old'];
+                                                        $newVal = $c['new_label'] ?? $c['new'];
+                                                        $loc = '<span style="text-decoration:line-through; color:#dc2626;">' . htmlspecialchars($oldVal ?: '-') . '</span> &rarr; <span style="color:#16a34a;">' . htmlspecialchars($newVal ?: '-') . '</span>';
                                                     }
                                                 }
                                                 return "<div>$dept</div><div style='font-size:0.8rem; color:var(--color-text-muted);'>$loc</div>";
@@ -691,13 +763,18 @@ require_once 'includes/layout.php';
                                     <?php else: ?>
                                         <?php
                                         $renderAssetCell = function($field) use ($row) {
-                                            if ($row['status'] === 'update' && isset($row['changes'][$field])) {
-                                                $c = $row['changes'][$field];
-                                                return '<span style="text-decoration:line-through; color:#dc2626;">' . htmlspecialchars($c['old'] ?: '-') . '</span> &rarr; <span style="color:#16a34a;">' . htmlspecialchars($c['new'] ?: '-') . '</span>';
-                                            }
-                                            $val = $row['data'][$field] ?? '';
-                                            return htmlspecialchars($val === '' ? '-' : $val);
-                                        };
+                                             $dbField = $field;
+                                             if ($field === 'location_name') $dbField = 'location_id';
+                                             if ($field === 'emp_id') $dbField = 'user_id';
+                                             if ($row['status'] === 'update' && isset($row['changes'][$dbField])) {
+                                                 $c = $row['changes'][$dbField];
+                                                 $oldVal = $c['old_label'] ?? $c['old'];
+                                                 $newVal = $c['new_label'] ?? $c['new'];
+                                                 return '<span style="text-decoration:line-through; color:#dc2626;">' . htmlspecialchars($oldVal ?: '-') . '</span> &rarr; <span style="color:#16a34a;">' . htmlspecialchars($newVal ?: '-') . '</span>';
+                                             }
+                                             $val = $row['data'][$field] ?? '';
+                                             return htmlspecialchars($val === '' ? '-' : $val);
+                                         };
                                         ?>
                                         <td><?= $renderAssetCell('category') ?></td>
                                         <td><?= $renderAssetCell('hostname') ?></td>
