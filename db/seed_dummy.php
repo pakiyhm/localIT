@@ -29,6 +29,9 @@ $pdo->exec("PRAGMA foreign_keys = ON;");
 try {
     $pdo->exec("UPDATE system_settings SET setting_value = '123456' WHERE setting_key = 'edit_pin'");
     $pdo->exec("UPDATE system_settings SET setting_value = '60' WHERE setting_key = 'session_minutes'");
+    $pdo->exec("UPDATE system_settings SET setting_value = 'IT Asset Management' WHERE setting_key = 'company_name'");
+    $pdo->exec("UPDATE system_settings SET setting_value = 'IT Department' WHERE setting_key = 'company_dept'");
+    $pdo->exec("UPDATE system_settings SET setting_value = 'IT ASSET TAG' WHERE setting_key = 'label_owner_text'");
     $pdo->exec("DELETE FROM system_settings WHERE setting_key = 'company_logo'");
 } catch (Exception $e) { /* ignore */ }
 
@@ -124,7 +127,7 @@ $pdo->exec("INSERT INTO logs (accessory_id, action_type, to_user_id, note, creat
 $pdo->exec("INSERT INTO incoming_orders (category, model, qty_expected, qty_received, vendor, purchase_order, ownership_type, ordered_date, eta_date, status, note)
             VALUES ('Laptop', 'Dell Latitude 5560', 3, 0, 'Dell Technologies', 'PO-2026-010', 'Buy', '".date('Y-m-d', strtotime('-5 days'))."', '".date('Y-m-d', strtotime('+10 days'))."', 'ordered', 'New hire batch Q3')");
 
-echo "\n✅ Dummy data seeded successfully!\n";
+$pdo->exec("VACUUM;");\n\necho "\n✅ Dummy data seeded successfully!\n";
 echo "   - 5 Locations\n";
 echo "   - 6 Users (with emails)\n";
 echo "   - 10 Assets (2 spare, 1 repair)\n";

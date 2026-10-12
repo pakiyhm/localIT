@@ -583,7 +583,7 @@ function confirmDeleteColumn(label) {
                 
                 <div class="form-group" style="margin-bottom:16px;">
                     <label class="form-label" style="font-weight:700;">Company / Organization Name</label>
-                    <input type="text" name="company_name" class="form-control" value="<?= htmlspecialchars($cur_comp_name) ?>" required placeholder="e.g. Company Name" <?= !is_edit_mode() ? 'disabled' : '' ?>>
+                    <input type="text" name="company_name" class="form-control" value="<?= htmlspecialchars($cur_comp_name) ?>" required placeholder="e.g. Acme Corp" <?= !is_edit_mode() ? 'disabled' : '' ?>>
                 </div>
 
                 <div class="form-group" style="margin-bottom:16px;">

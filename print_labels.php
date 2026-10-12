@@ -213,7 +213,7 @@ $label_owner_text = _auth_get_setting($pdo, 'label_owner_text', 'IT ASSET TAG');
     </div>
     <div style="display:flex; gap:10px;">
         <button class="btn btn-ghost" onclick="document.querySelector('.settings-panel').classList.toggle('active')">Settings</button>
-        <button class="btn btn-primary" onclick="window.print()">Print Labels</button>
+        <button class="btn btn-primary" onclick="triggerSafePrint()">Print Labels</button>
     </div>
 </div>
 
@@ -240,5 +240,17 @@ $label_owner_text = _auth_get_setting($pdo, 'label_owner_text', 'IT ASSET TAG');
 <?php endforeach; ?>
 </div>
 
+<script>
+function triggerSafePrint() {
+    if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+    }
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            window.print();
+        }, 400);
+    });
+}
+</script>
 </body>
 </html>

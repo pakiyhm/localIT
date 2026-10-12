@@ -323,6 +323,42 @@ require_once 'includes/layout.php';
                         <td colspan="8">
                             <div class="asset-sub-inner">
 
+                                <?php
+                                $latestSlip = $pdo->prepare("SELECT * FROM handover_slips WHERE user_id = :u ORDER BY created_at DESC LIMIT 1");
+                                $latestSlip->execute(['u' => $uid]);
+                                $slip = $latestSlip->fetch(PDO::FETCH_ASSOC);
+
+                                $needsDocUpdate = false;
+                                $updateReason = '';
+                                if (!$slip) {
+                                    $needsDocUpdate = true;
+                                    $updateReason = 'No signed handover certificate on file for current assets.';
+                                } else {
+                                    $compareTime = $slip['signed_at'] ?? $slip['created_at'];
+                                    $changeStmt = $pdo->prepare("
+                                        SELECT COUNT(*) 
+                                        FROM logs 
+                                        WHERE (to_user_id = :u OR from_user_id = :u) 
+                                          AND created_at > :t
+                                    ");
+                                    $changeStmt->execute(['u' => $uid, 't' => $compareTime]);
+                                    if ((int)$changeStmt->fetchColumn() > 0) {
+                                        $needsDocUpdate = true;
+                                        $updateReason = 'Inventory has changed (new items assigned/returned) since the last certificate (' . $slip['doc_no'] . ').';
+                                    }
+                                }
+                                ?>
+
+                                <?php if ($needsDocUpdate && $showTab !== 'resigned'): ?>
+                                <div style="background:#fffbeb; border:1px solid #fef3c7; color:#b45309; padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:.82rem; display:flex; align-items:center; gap:8px;">
+                                    <i class="bi bi-exclamation-triangle-fill" style="font-size:1.1rem; color:#d97706;"></i>
+                                    <div>
+                                        <strong>Document Action Required:</strong> <?= htmlspecialchars($updateReason) ?> 
+                                        Please print a new slip or have the employee write the changes on the existing sheet.
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+
                                 <!-- Quick Assign Form: hidden for resigned users -->
                                 <?php if ($showTab !== 'resigned'): ?>
                                 <div class="assign-panel edit-only">

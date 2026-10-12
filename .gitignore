@@ -37,3 +37,7 @@ PACKAGE.command
 
 # Package output
 *.zip
+
+# Local archive & tags
+Archive/
+BBITTAG.png

@@ -259,6 +259,18 @@ require_once 'includes/layout.php';
                     </td>
                     <td><?= date('d M Y', strtotime($s['created_at'])) ?></td>
                     <td style="text-align:center;">
+                        <?php 
+                        $compareTime = $s['signed_at'] ?? $s['created_at'];
+                        $changeStmt = $pdo->prepare("
+                            SELECT COUNT(*) 
+                            FROM logs 
+                            WHERE (to_user_id = :u OR from_user_id = :u) 
+                              AND created_at > :t
+                        ");
+                        $changeStmt->execute(['u' => $s['user_id'], 't' => $compareTime]);
+                        $hasChanges = ((int)$changeStmt->fetchColumn() > 0);
+                        ?>
+
                         <?php if ($isPending): ?>
                             <span class="badge" style="background:#fffbeb; color:#b45309; border:1px solid #fde68a; font-weight:700; padding:4px 8px;">
                                 ⏳ Pending Signature
@@ -267,6 +279,10 @@ require_once 'includes/layout.php';
                             <span class="badge" style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; font-weight:700; padding:4px 8px;">
                                 ✅ Signed & Complete
                             </span>
+                        <?php endif; ?>
+
+                        <?php if ($hasChanges): ?>
+                            <br><small class="text-danger" style="font-weight:700; display:inline-flex; align-items:center; gap:3px; margin-top:4px;" title="Changes made after this document was created/signed"><i class="bi bi-exclamation-triangle-fill"></i> Outdated</small>
                         <?php endif; ?>
                     </td>
                     <td style="text-align:center;">

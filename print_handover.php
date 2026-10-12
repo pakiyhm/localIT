@@ -506,7 +506,7 @@ $purposeText = ($type === 'exchange')
     </div>
     <div style="display:flex; gap:10px;">
         <button class="btn btn-ghost" onclick="window.close()">Close</button>
-        <button class="btn" onclick="window.print()">Print Certificate</button>
+        <button class="btn" onclick="triggerSafePrint()">Print Certificate</button>
     </div>
 </div>
 
@@ -542,31 +542,37 @@ $purposeText = ($type === 'exchange')
             </td>
             <td class="cert-title-block" style="vertical-align:top;">
                 <div class="cert-title-en"><?= htmlspecialchars($docTitle) ?></div>
-                <div class="cert-meta">Document Reference: <strong style="color:#0f172a; font-family:monospace;"><?= $docNo ?></strong></div>
-                <div class="cert-meta">Issuance Date: <strong><?= date('d M Y') ?></strong></div>
+                <div class="cert-meta">Document Reference: <strong contenteditable="true" style="color:#0f172a; font-family:monospace;" title="Click to edit document reference"><?= $docNo ?></strong></div>
+                <div class="cert-meta">Issuance Date: <strong contenteditable="true" style="color:#0f172a;" title="Click to edit issuance date"><?= date('d M Y') ?></strong></div>
             </td>
         </tr>
     </table>
 
     <!-- Info Grid -->
-    <table class="grid-table">
+    <table class="grid-table" style="table-layout: fixed; width: 100%;">
+        <colgroup>
+            <col style="width: 18%;">
+            <col style="width: 50%;">
+            <col style="width: 18%;">
+            <col style="width: 14%;">
+        </colgroup>
         <tr>
             <td class="grid-label">Employee Name</td>
-            <td><strong><?= htmlspecialchars($user['full_name'] ?? 'Unassigned / IT Stock') ?></strong></td>
+            <td style="word-wrap: break-word;"><strong><?= htmlspecialchars($user['full_name'] ?? 'Unassigned / IT Stock') ?></strong></td>
             <td class="grid-label">Employee ID</td>
-            <td><?= htmlspecialchars($user['emp_id'] ?? '—') ?></td>
+            <td style="word-wrap: break-word;"><?= htmlspecialchars($user['emp_id'] ?? '—') ?></td>
         </tr>
         <tr>
             <td class="grid-label">Department</td>
-            <td><?= htmlspecialchars($user['department'] ?? '—') ?></td>
+            <td style="word-wrap: break-word;"><?= htmlspecialchars($user['department'] ?? '—') ?></td>
             <td class="grid-label">Location</td>
-            <td><?= htmlspecialchars($user['location_name'] ?? '—') ?></td>
+            <td style="word-wrap: break-word;"><?= htmlspecialchars($user['location_name'] ?? '—') ?></td>
         </tr>
         <tr>
             <td class="grid-label">Action Purpose</td>
-            <td><strong><?= htmlspecialchars($purposeText) ?></strong></td>
+            <td style="word-wrap: break-word;"><strong contenteditable="true" title="Click to edit action purpose"><?= htmlspecialchars($purposeText) ?></strong></td>
             <td class="grid-label">Ticket / Ref No.</td>
-            <td><?= htmlspecialchars($_GET['ticket'] ?? ('TK-' . date('Ymd'))) ?></td>
+            <td contenteditable="true" style="font-weight:700; color:#0f172a; word-wrap: break-word;" title="Click to edit Ticket / Ref No."><?= htmlspecialchars($_GET['ticket'] ?? ('TK-' . date('Ymd'))) ?></td>
         </tr>
     </table>
 
@@ -643,6 +649,21 @@ $purposeText = ($type === 'exchange')
                 <td contenteditable="true" class="td-remark" title="Click to type remark"></td>
             </tr>
             <?php endforeach; endif; ?>
+
+            <?php 
+            // Append 4 empty rows for manual handwriting entry
+            for ($k = 0; $k < 4; $k++): 
+            ?>
+            <tr class="handwritten-row">
+                <td style="text-align:center; font-weight:700;" class="row-index"><?= $i++ ?></td>
+                <td style="border-bottom: 1px dashed #94a3b8; height:28px;"></td>
+                <td style="border-bottom: 1px dashed #94a3b8; height:28px;"></td>
+                <td style="border-bottom: 1px dashed #94a3b8; height:28px; padding-right:22px; position:relative;">
+                    <button type="button" onclick="this.closest('tr').remove(); reindexCert();" class="btn-del-item" title="Remove row from this certificate">&times;</button>
+                </td>
+                <td style="border-bottom: 1px dashed #94a3b8; height:28px;" contenteditable="true" class="td-remark"></td>
+            </tr>
+            <?php endfor; ?>
         </tbody>
     </table>
 
@@ -743,6 +764,17 @@ $purposeText = ($type === 'exchange')
             if (el) el.innerText = idx++;
         });
         certCount = idx - 1;
+    }
+
+    function triggerSafePrint() {
+        if (document.activeElement && document.activeElement.blur) {
+            document.activeElement.blur();
+        }
+        requestAnimationFrame(() => {
+            setTimeout(() => {
+                window.print();
+            }, 400);
+        });
     }
 
     function escapeHtml(str) {
